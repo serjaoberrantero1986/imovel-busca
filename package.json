@@ -1,0 +1,12 @@
+{
+  "name": "imovel-busca",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check app.js && node --check api/extract.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
