@@ -68,6 +68,7 @@ try {
   res=await request({target:'olx.com.br',type:'plp',city:'Salto de Pirapora',state:'SP',propertyType:'house'});
   assert.equal(res.statusCode,200);
   assert.equal(captured.keyword,'casa');
+  assert.equal(captured.categoryPath,'imoveis');
   assert.equal(captured.propertyTypes,undefined);
   res=await request({target:'imovelweb.com.br',type:'plp',city:'Salto de Pirapora',state:'SP'});
   assert.equal(res.statusCode,400);
