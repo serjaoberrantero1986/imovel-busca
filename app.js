@@ -6,34 +6,66 @@ const safe = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&am
 const url = value => { try {const u = new URL(value); return ['https:','http:'].includes(u.protocol) ? u.href : null} catch {return null;} };
 const text = value => value === null || value === undefined || value === '' ? '—' : String(value);
 let records = [], selected = new Set(), reported = null, center = null, map = null, ring = null, anchor = null, layer = null;
-function normalized(item, source) {
-  const a = item.attributes || {}, p = item.prices || {}, address = item.address || {}, geo = item.coordinates || {};
-  const lat = number(address.latitude ?? geo.latitude ?? item.latitude);
-  const lng = number(address.longitude ?? geo.longitude ?? item.longitude);
-  const valid = lat !== null && lng !== null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && (lat !== 0 || lng !== 0);
-  const listingId = text(item.id || item.externalId || item.listingId || item.url);
+
+function canon(value){return String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
+function classify(item) {
+  const units=(Array.isArray(item.unitTypes)?item.unitTypes:[]).map(x=>canon(x)),raw=canon([item.category,item.propertyType,item.typeLabel,item.title].filter(Boolean).join(' '));
+  const match=t=>units.some(u=>t.some(k=>u.includes(k)));
+  if(match(['allotment','land','lot'])||/\b(terreno|terrenos|lote|lotes)\b/.test(raw))return 'land';
+  if(match(['farm','rural'])||/\b(chacara|chacaras|sitio|sitios|fazenda|fazendas)\b/.test(raw))return 'farm';
+  if(match(['penthouse'])||/\b(cobertura|coberturas)\b/.test(raw))return 'penthouse';
+  if(match(['warehouse'])||/\b(galpao|galpoes)\b/.test(raw))return 'warehouse';
+  if(match(['commercial_room'])||/\b(sala comercial|salas comerciais)\b/.test(raw))return 'commercial_room';
+  if(match(['apartment','flat','kitnet'])||/\b(apartamento|apartamentos|studio|kitnet)\b/.test(raw))return 'apartment';
+  if(match(['home','house'])||/\b(casa|casas|sobrado|sobrados)\b/.test(raw))return 'house';
+  return 'unknown';
+}
+const typeLabel={house:'Casa',apartment:'Apartamento',land:'Terreno',farm:'Chácara/sítio',penthouse:'Cobertura',warehouse:'Galpão',commercial_room:'Sala comercial',unknown:'A classificar'};
+function propValue(item, keys) {
+  if(!Array.isArray(item.properties))return null;
+  const k=keys.map(canon);
+  const found=item.properties.find(p=>k.some(t=>canon([p.name,p.label].join(' ')).includes(t)));
+  const v=found?.value;
+  if(v===null||v===undefined)return null;
+  const m=String(v).match(/[\d.]+(?:,\d+)?/);
+  return m?number(m[0].replace(/\./g,'').replace(',','.')):null;
+}
+function normalized(item,source) {
+  const a=item.attributes||{},p=item.prices||{},address=item.address||item.location||{},geo=item.coordinates||{};
+  const lat=number(address.latitude??geo.latitude??item.latitude);
+  const lng=number(address.longitude??geo.longitude??item.longitude);
+  const valid=lat!==null&&lng!==null&&Math.abs(lat)<=90&&Math.abs(lng)<=180&&(lat!==0||lng!==0);
+  const listingId=text(item.id||item.listingId||item.externalId||item.listingExternalId||item.url);
+  const type=classify(item);
   return {
-    id:listingId, key:source + ':' + listingId, source,
-    title:text(item.title || item.name || 'Imóvel sem título'), link:url(item.url || item.listingUrl),
-    price:number(p.mainValue ?? item.askingPrice ?? item.price),
-    usable:number(first(a.usableAreas) ?? item.usableArea ?? item.builtArea),
-    total:number(first(a.totalAreas) ?? item.totalArea ?? item.landArea),
-    beds:number(first(a.bedrooms) ?? item.bedrooms),
-    suites:number(first(a.suites) ?? item.suites), baths:number(first(a.bathrooms) ?? item.bathrooms),
-    spaces:number(first(a.parkingSpaces) ?? item.parkingSpaces),
-    floors:number(first(a.floors) ?? item.floors),
-    neighborhood:text(address.neighborhood || item.neighborhood), city:text(address.city || item.city),
-    lat:valid ? lat : null, lng:valid ? lng : null, approx:address.isApproximateLocation !== false,
-    amenities:Array.isArray(item.amenities) ? item.amenities : [],
-    advertiser:text(item.advertiser?.name), description:text(item.description)
+    id:listingId,key:source+':'+listingId,source,type,
+    title:text(item.title||item.name||item.metaTitle||'Imóvel sem título'),
+    link:url(item.url||item.listingUrl),
+    price:number(p.mainValue??p.price??item.askingPrice??item.price),
+    usable:number(first(a.usableAreas)??item.usableArea??item.builtArea??propValue(item,['area util','area privativa','area construida'])),
+    total:number(first(a.totalAreas)??item.totalArea??item.landArea??propValue(item,['area total','terreno'])),
+    beds:number(first(a.bedrooms)??item.bedrooms??propValue(item,['quartos','dormitorios'])),
+    suites:number(first(a.suites)??item.suites??propValue(item,['suites'])),
+    baths:number(first(a.bathrooms)??item.bathrooms??propValue(item,['banheiros'])),
+    spaces:number(first(a.parkingSpaces)??item.parkingSpaces??propValue(item,['vagas','garagem'])),
+    floors:number(first(a.floors)??item.floors),
+    neighborhood:text(address.neighborhood||item.neighborhood),
+    city:text(address.city||item.city),
+    lat:valid?lat:null,lng:valid?lng:null,approx:address.isApproximateLocation!==false,
+    amenities:Array.isArray(item.amenities)?item.amenities:[],
+    advertiser:text(item.advertiser?.name),description:text(item.description),
+    detailed:false
   };
 }
 function payload(input) {
-  const d = input?.data ?? input;
-  const arr = Array.isArray(d?.items) ? d.items : Array.isArray(d?.results) ? d.results : d?.item ? [d.item] : d?.listing ? [d.listing] : d?.property ? [d.property] : d?.id || d?.title ? [d] : [];
-  if (!arr.length) throw new Error('Não encontrei anúncios no JSON. Confira se a pesquisa PLP retornou items.');
-  const source = d?.source || d?.target || 'Fonte externa';
-  return {items:arr.map(x => normalized(x,source)), total:typeof d?.totalResults === 'number' ? d.totalResults : null};
+  const d=input?.data??input;
+  const leaf=d?.data&&typeof d.data==='object'&&!Array.isArray(d.data)?d.data:d;
+  const arr=Array.isArray(d?.items)?d.items:Array.isArray(d?.results)?d.results:
+    d?.item?[d.item]:d?.listing?[d.listing]:d?.property?[d.property]:
+    leaf&&(leaf.id||leaf.listingId||leaf.title)?[leaf]:[];
+  if(!arr.length)throw new Error(input?.notFound?'Anúncio não encontrado na fonte.':'A consulta não retornou anúncios. Altere os filtros ou o portal.');
+  const source=d?.source||d?.target||'Fonte externa';
+  return {items:arr.map(x=>normalized(x,source)),total:typeof d?.totalResults==='number'?d.totalResults:null};
 }
 function report(message, error=false) { $('status').textContent = message; $('status').className = error ? 'status error' : 'status'; }
 const validPoint = p => p.lat !== null && p.lng !== null;
