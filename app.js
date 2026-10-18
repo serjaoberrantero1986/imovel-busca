@@ -86,11 +86,14 @@ function visibleRecords(){
   const type=$('result-type').value,neigh=canon($('filter-neighborhood').value.trim());
   const pMin=valueOf('filter-price-min'),pMax=valueOf('filter-price-max');
   const aMin=valueOf('filter-area-min'),aMax=valueOf('filter-area-max');
+  const minBaths=valueOf('filter-bathrooms-min'),minSpaces=valueOf('filter-parking-min');
   const onlyRadius=$('in-radius').checked,km=Number($('radius').value);
   return records.filter(p=>{
     if(type&&p.type!==type)return false;
     if(neigh&&!canon(p.neighborhood).includes(neigh))return false;
     if(minBeds&&(p.beds===null||p.beds<minBeds))return false;
+    if(minBaths!==null&&(p.baths===null||p.baths<minBaths))return false;
+    if(minSpaces!==null&&(p.spaces===null||p.spaces<minSpaces))return false;
     if(pMin!==null&&(p.price===null||p.price<pMin))return false;
     if(pMax!==null&&(p.price===null||p.price>pMax))return false;
     if(aMin!==null&&(p.usable===null||p.usable<aMin))return false;
@@ -152,37 +155,144 @@ function renderCards() {
 function renderComparison() {
   const arr=records.filter(p=>selected.has(p.key)), container=$('comparison');$('export-btn').disabled=arr.length<2;
   if(!arr.length){container.textContent='Selecione os anúncios na lista para comparar suas características.';return;}
-  const attrs=[['Fonte','source'],['Preço pedido','price'],['Área útil','usable'],['Área total','total'],['Dormitórios','beds'],['Suítes','suites'],['Banheiros','baths'],['Vagas','spaces'],['Pavimentos','floors'],['Bairro','neighborhood'],['Anunciante','advertiser'],['Comodidades','amenities']];
+  const attrs=[['Fonte','source'],['Tipo de imóvel','type'],['Preço pedido','price'],['Área útil','usable'],['Área total','total'],['Dormitórios','beds'],['Suítes','suites'],['Banheiros','baths'],['Vagas','spaces'],['Pavimentos','floors'],['Bairro','neighborhood'],['Anunciante','advertiser'],['Comodidades','amenities']];
   let html='<table><thead><tr><th>Característica</th>'+arr.map(p=>'<th>'+safe(p.title.slice(0,70))+'</th>').join('')+'</tr></thead><tbody>';
-  for (const [label,key] of attrs) html+='<tr><th>'+safe(label)+'</th>'+arr.map(p=>'<td>'+safe(key==='price'?money(p.price):key==='amenities'?(p.amenities.join(', ')||'—'):text(p[key]))+'</td>').join('')+'</tr>';
+  for (const [label,key] of attrs) html+='<tr><th>'+safe(label)+'</th>'+arr.map(p=>'<td>'+safe(key==='price'?money(p.price):key==='type'?(typeLabel[p.type]||'A classificar'):key==='amenities'?(p.amenities.join(', ')||'—'):text(p[key]))+'</td>').join('')+'</tr>';
   container.innerHTML=html+'</tbody></table>';
 }
 function refresh(){renderCards();renderComparison();}
 function load(input) {
   const data=payload(input), known=new Map(records.map((x,i)=>[x.key,i]));
-  for (const p of data.items){const idx=known.get(p.key);if(idx!==undefined)records[idx]=p;else{known.set(p.key,records.length);records.push(p);}}
-  reported=data.total;drawMap(true);refresh();
-  report('Consulta importada: '+data.items.length+' anúncios no lote; '+records.length+' registros nesta sessão. Dados ainda não conferidos.');
+  for (const p of data.items) {
+    const idx=known.get(p.key);
+    if(idx!==undefined) {
+      const prior=records[idx], update={...prior};
+      for(const [key,val] of Object.entries(p)) {
+        if(val===null||val===undefined||val==='—'||(Array.isArray(val)&&val.length===0))continue;
+        if(key==='type'&&val==='unknown'&&prior.type!=='unknown')continue;
+        update[key]=val;
+      }
+      if(input?.data?.type==='pdp')update.detailed=true;
+      records[idx]=update;
+    } else {
+      known.set(p.key,records.length);
+      records.push({...p,detailed:input?.data?.type==='pdp'});
+    }
+  }
+  if(data.total!==null)reported=data.total;
+  drawMap(true);refresh();
+  report('Importação concluída: '+data.items.length+' anúncios nesta consulta e '+records.length+' únicos por ID/fonte na sessão. Dados sujeitos a revisão.');
 }
 $('import-btn').onclick=()=>{try{load(JSON.parse($('json-input').value));}catch(e){report(e.message||'JSON inválido',true);}};
 $('clear-btn').onclick=()=>{records=[];selected.clear();reported=null;drawMap(true);refresh();report('Sessão limpa. Nenhum dado foi enviado ao servidor.');};
 function tab(which){const api=which==='api';$('import-panel').classList.toggle('hidden',api);$('api-panel').classList.toggle('hidden',!api);$('tab-api').classList.toggle('active',api);$('tab-import').classList.toggle('active',!api);}
 $('tab-import').onclick=()=>tab('import');$('tab-api').onclick=()=>tab('api');
-$('operation').onchange=()=>{const pdp=$('operation').value==='pdp';$('pdp-wrap').classList.toggle('hidden',!pdp);for(const id of ['city','state','page','keyword'])$(id).disabled=pdp;};
+const GEO_PORTALS=new Set(['zapimoveis.com.br','vivareal.com.br','chavesnamao.com.br']);
+function syncForm(){
+  const portal=$('portal').value,pdp=$('operation').value==='pdp';
+  $('pdp-wrap').classList.toggle('hidden',!pdp);
+  $('search-url-wrap').classList.toggle('hidden',pdp||!['olx.com.br','imovelweb.com.br'].includes(portal));
+  for(const id of ['city','state','page','keyword','property-type','neighborhood','price-min','price-max','area-min','area-max','bedrooms-min','bathrooms-min','parking-min','search-near','search-url']){
+    $(id).disabled=pdp;
+  }
+  $('search-near').disabled=pdp||!GEO_PORTALS.has(portal);
+  if(!GEO_PORTALS.has(portal))$('search-near').checked=false;
+  $('provider-hint').textContent=pdp?'Detalhamento de uma URL por vez.':
+    portal==='olx.com.br'?'OLX: busca textual/UF/cidade ou URL; tipo e área refinados na lista.':
+    portal==='imovelweb.com.br'?'Imovelweb: cole a URL da página de resultados; filtros na lista.':
+    'Filtros nativos de tipo, preço e área; mínimos de cômodos filtrados na lista.';
+}
+$('operation').onchange=syncForm;
+$('portal').onchange=syncForm;
+syncForm();
+async function callApi(query){
+  const response=await fetch('/api/extract',{
+    method:'POST',headers:{'Content-Type':'application/json','x-lab-code':$('access').value},
+    body:JSON.stringify(query)
+  });
+  const body=await response.json();
+  if(!response.ok)throw new Error(body.error||'Falha na GeckoAPI (HTTP '+response.status+')');
+  return body;
+}
+function validatedNum(id){
+  const raw=$(id).value.trim();
+  return raw===''?null:Number(raw);
+}
+function queryFilters(){
+  const type=$('operation').value,target=$('portal').value,query={target,type};
+  if(type==='pdp'){query.url=$('pdp-url').value.trim();return query;}
+  query.city=$('city').value.trim();
+  query.state=$('state').value.trim().toUpperCase();
+  query.page=Number($('page').value);
+  query.keyword=$('keyword').value.trim();
+  query.propertyType=$('property-type').value;
+  query.neighborhood=$('neighborhood').value.trim();
+  const searchUrl=$('search-url').value.trim();
+  if(searchUrl&&['olx.com.br','imovelweb.com.br'].includes(target))query.url=searchUrl;
+  for(const [from,to] of [['price-min','priceMin'],['price-max','priceMax'],['area-min','areaMin'],['area-max','areaMax'],['bedrooms-min','bedrooms'],['bathrooms-min','bathrooms'],['parking-min','parkingSpots']]){
+    const n=validatedNum(from);if(n!==null)query[to]=n;
+  }
+  if($('search-near').checked&&GEO_PORTALS.has(target)){
+    if(!center)throw new Error('Clique no mapa para definir o centro da pesquisa geográfica.');
+    query.searchNear=true;query.latitude=center.lat;query.longitude=center.lng;
+  }
+  return query;
+}
+function mirrorLocalFilters(query){
+  // Os mínimos de quartos, banheiros e vagas são aplicados localmente porque
+  // a API espera listas exatas desses valores, não limiares mínimos.
+  if(query.propertyType!==undefined)$('result-type').value=query.propertyType||'';
+  if(query.neighborhood!==undefined)$('filter-neighborhood').value=query.neighborhood;
+  const table=[['priceMin','filter-price-min'],['priceMax','filter-price-max'],['areaMin','filter-area-min'],['areaMax','filter-area-max'],['bedrooms','min-beds'],['bathrooms','filter-bathrooms-min'],['parkingSpots','filter-parking-min']];
+  for(const [from,to] of table)$(to).value=query[from]??'';
+}
 $('api-btn').onclick=async()=>{
-  const type=$('operation').value, query={target:$('portal').value,type};
-  if(type==='pdp')query.url=$('pdp-url').value.trim();
-  else {query.city=$('city').value.trim();query.state=$('state').value.trim();query.page=Number($('page').value);query.keyword=$('keyword').value.trim();}
-  const button=$('api-btn'); button.disabled=true;report('Consultando a GeckoAPI. Esta operação pode consumir créditos...');
+  const button=$('api-btn');let query;
+  try{query=queryFilters();}catch(e){report(e.message,true);return;}
+  if(!$('access').value){report('Informe o código de acesso do laboratório, não o token da GeckoAPI.',true);return;}
+  if(!window.confirm('Esta consulta à GeckoAPI poderá consumir créditos. Deseja continuar?'))return;
+  button.disabled=true;report('Consultando '+query.target+'... Aguarde alguns segundos.');
   try{
-    const response=await fetch('/api/extract',{method:'POST',headers:{'Content-Type':'application/json','x-lab-code':$('access').value},body:JSON.stringify(query)});
-    const body=await response.json();
-    if(!response.ok)throw new Error(body.error || 'Falha na GeckoAPI (HTTP '+response.status+')');
+    const body=await callApi(query);
+    if(body?.notFound||body?.data===null){report('O provedor não retornou anúncios para essa consulta.',true);return;}
+    mirrorLocalFilters(query);
     load(body);
-  }catch(e){report(e.message||'Falha de conexão',true);}finally{button.disabled=false;}
+  }catch(e){report(e.message||'Falha de conexão',true);}
+  finally{button.disabled=false;}
 };
-$('radius').oninput=()=>{$('radius-label').textContent=$('radius').value+' km';if(ring)ring.setRadius(Number($('radius').value)*1000);renderCards();};
-$('in-radius').onchange=renderCards;$('min-beds').oninput=renderCards;$('dedupe').onchange=renderCards;
+async function fetchDetails(p,button){
+  if(!$('access').value){tab('api');report('Para consultar detalhes, informe primeiro seu código de acesso na aba Consultar GeckoAPI.',true);return;}
+  if(!p.link){report('Este anúncio não possui URL pública de origem.',true);return;}
+  if(!window.confirm('Consultar detalhes individuais (PDP) na GeckoAPI? A operação pode consumir créditos.'))return;
+  button.disabled=true;report('Consultando detalhes do anúncio...');
+  try{
+    const data=await callApi({target:p.source,type:'pdp',url:p.link});
+    if(data?.notFound||!data?.data){report('Anúncio não encontrado pelo provedor.',true);return;}
+    const extracted=payload(data);
+    if(!extracted.items.length)throw new Error('A API não forneceu informações do anúncio.');
+    const detail=extracted.items[0];
+    // A PDP de alguns portais retorna outro ID; o anúncio original é associado pela URL.
+    const idx=records.findIndex(item=>item.key===p.key);
+    if(idx<0)throw new Error('Anúncio original não encontrado no comparador.');
+    const merged={...p};
+    for(const [key,val] of Object.entries(detail)) {
+      if(['id','key','source','link'].includes(key))continue;
+      if(val===null||val===undefined||val==='—'||(Array.isArray(val)&&!val.length))continue;
+      if(key==='type'&&val==='unknown')continue;
+      merged[key]=val;
+    }
+    merged.detailed=true;
+    records[idx]=merged;
+    drawMap(false);refresh();
+    report('Consulta PDP concluída. Características disponíveis foram atualizadas. Confira os dados antes de comparar.');
+  }catch(e){report(e.message||'Erro ao obter detalhes',true);}
+  finally{button.disabled=false;}
+}
+$('radius').oninput=()=>{$('radius-label').textContent=$('radius').value+' km';if(ring)ring.setRadius(Number($('radius').value)*1000);refresh();};
+for(const id of ['in-radius','min-beds','dedupe','result-type','filter-neighborhood','filter-price-min','filter-price-max','filter-area-min','filter-area-max','filter-bathrooms-min','filter-parking-min']){
+  $(id).addEventListener('input',refresh);
+  $(id).addEventListener('change',refresh);
+}
 $('export-btn').onclick=()=>{
   const picked=records.filter(p=>selected.has(p.key));if(picked.length<2)return;
   const fields=['source','id','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','lat','lng','approx','advertiser'];
