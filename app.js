@@ -268,6 +268,7 @@ function validatedNum(id){
   return raw===''?null:Number(raw);
 }
 function queryFilters(){
+  syncOlxPilotLocation();
   const type=$('operation').value,target=$('portal').value,query={target,type};
   if(type==='pdp'){query.url=$('pdp-url').value.trim();return query;}
   query.city=$('city').value.trim();
