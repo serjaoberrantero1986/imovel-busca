@@ -246,7 +246,7 @@ function syncForm(){
     'Tipo, preço, área, bairro e URL pública de busca; cidade/UF são auditadas em cada anúncio.';
   $('url-help').textContent=portal==='imovelweb.com.br'?
     'Imovelweb: cole a URL de resultados .html. O site não aceita filtros estruturados nesta API.':
-    portal==='olx.com.br'?'OLX: ao usar URL, os filtros e paginação contidos nela prevalecem. Para mudar a página, altere a própria URL.':
+    portal==='olx.com.br'?'OLX: a documentação aceita URL de lista estadual/nacional. Para pesquisar um município, prefira os campos cidade + UF + região oficial.':
     'VivaReal/Chaves: URL opcional; pode preservar os filtros do portal. Cidade/UF continuam verificadas na resposta.';
 }
 $('operation').onchange=syncForm;
@@ -310,7 +310,8 @@ function displayAudit(a){
   el.textContent='Cidade conferida: '+a.requestedCity+'/'+a.requestedState+'. '+
     a.acceptedItems+' de '+a.providerItems+' anúncios desta página pertencem ao município informado. '+
     a.discardedOtherCities+' de outras cidades e '+a.discardedMissingLocation+
-    ' sem localização verificável foram descartados. O total geral do portal pode incluir outras localidades.';
+    ' sem localização verificável foram descartados. O total geral do portal pode incluir outras localidades.'+
+    (a.requestId?' Referência GeckoAPI: '+a.requestId+'.':'');
   const check=a.requestUrlCheck;
   if(!check||check.status==='not_applicable'){origin.classList.add('hidden');return;}
   origin.classList.remove('hidden');
