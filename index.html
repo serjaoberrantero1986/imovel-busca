@@ -40,7 +40,8 @@
 
 <label class="field">Finalidade<select id="business-type"><option value="sale">Venda</option><option value="rent">Aluguel</option></select></label>
 <label class="field">Ordenar<select id="sort"><option value="">Padrão do portal</option></select></label>
-<label class="field span2 hidden" id="olx-region-wrap">Região da OLX (opcional)<input id="olx-region" placeholder="Ex.: Região de Sorocaba"></label>
+<label class="field span2 hidden" id="olx-region-wrap">Região oficial da OLX<input id="olx-region" placeholder="Ex.: Regiao de Sorocaba"></label>
+<div id="olx-reference" class="span3 hidden" style="font-size:12px;color:#66768b">Para Salto de Pirapora, a OLX utiliza <strong>Regiao de Sorocaba</strong>. <a target="_blank" rel="noopener noreferrer" href="https://www.olx.com.br/imoveis/venda/casas/estado-sp/regiao-de-sorocaba/salto-de-pirapora">Conferir busca local no portal ↗</a></div>
 <label class="field span2 hidden" id="olx-category-wrap">Categoria OLX<input id="olx-category" value="imoveis" placeholder="imoveis"></label>
 <label class="field span3 hidden" id="search-url-wrap">URL da página de resultados<input id="search-url" placeholder="https://www.olx.com.br/..."></label>
 <label class="field span3"><span class="hint" id="url-help">Uma URL de pesquisa pode substituir os filtros estruturados do portal. A cidade/UF continuam validadas na resposta.</span></label>
@@ -50,6 +51,11 @@
 </section>
 <div id="status" class="status" role="status" aria-live="polite">Cole o JSON da sua pesquisa ou configure o token na Vercel para consultar diretamente.</div>
 <div id="location-audit" class="status hidden" role="status" aria-live="polite"></div>
+<div id="origin-audit" class="status hidden" role="status" aria-live="polite">
+  <strong>URL consultada pela GeckoAPI:</strong>
+  <a id="origin-url" target="_blank" rel="noopener noreferrer">Abrir pesquisa na OLX ↗</a>
+  <p id="origin-analysis" class="hint"></p>
+</div>
 <div class="summary"><div class="stat"><strong id="loaded">0</strong>Anúncios carregados</div><div class="stat"><strong id="total">—</strong>Total informado pela fonte</div><div class="stat"><strong id="mapped">0</strong>Com coordenadas</div><div class="stat"><strong id="picked">0</strong>Selecionados</div></div>
 <div class="workspace">
 <section class="panel">
