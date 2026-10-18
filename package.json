@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check app.js && node --check api/extract.js"
+    "check": "node --check app.js && node --check api/extract.js",
+    "test": "node --test scripts/test-lab.mjs"
   },
   "engines": {
     "node": ">=20"
