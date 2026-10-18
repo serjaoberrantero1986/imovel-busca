@@ -42,7 +42,7 @@ export default async function handler(req,res) {
     if(payload.type==='plp'&&json.data&&typeof json.data==='object') {
       const check=auditLocation(json.data,req.body.city,req.body.state);
       json.data.items=check.items;
-      json.data.locationAudit={...check.audit,requestUrlCheck:auditOlxRequestUrl(json.data,payload)};
+      json.data.locationAudit={...check.audit,requestUrlCheck:auditOlxRequestUrl(json.data,payload),requestId:typeof json.requestId==='string'?json.requestId:null,executionId:typeof json.executionId==='string'?json.executionId:null};
     }
     return send(res,200,json);
   }catch(e){return send(res,502,{error:e?.name==='AbortError'?'Tempo limite excedido.':'Não foi possível conectar à GeckoAPI.'});}
