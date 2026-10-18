@@ -1,5 +1,5 @@
 import {timingSafeEqual} from 'node:crypto';
-import {buildGeckoPayload,auditLocation,responseEnvelope} from '../lib/geckoContracts.mjs';
+import {buildGeckoPayload,auditLocation,auditOlxRequestUrl,responseEnvelope} from '../lib/geckoContracts.mjs';
 
 const buckets=new Map();
 function send(res,status,data){
@@ -42,7 +42,7 @@ export default async function handler(req,res) {
     if(payload.type==='plp'&&json.data&&typeof json.data==='object') {
       const check=auditLocation(json.data,req.body.city,req.body.state);
       json.data.items=check.items;
-      json.data.locationAudit=check.audit;
+      json.data.locationAudit={...check.audit,requestUrlCheck:auditOlxRequestUrl(json.data,payload)};
     }
     return send(res,200,json);
   }catch(e){return send(res,502,{error:e?.name==='AbortError'?'Tempo limite excedido.':'Não foi possível conectar à GeckoAPI.'});}
