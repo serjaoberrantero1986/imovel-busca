@@ -195,7 +195,7 @@ function load(input) {
   report('Importação concluída: '+data.items.length+' anúncios nesta consulta e '+records.length+' únicos por ID/fonte na sessão. Dados sujeitos a revisão.');
 }
 $('import-btn').onclick=()=>{try{activeLocation=null;displayAudit(null);load(JSON.parse($('json-input').value));}catch(e){report(e.message||'JSON inválido',true);}};
-$('clear-btn').onclick=()=>{records=[];selected.clear();reported=null;center=null;activeLocation=null;$('location-audit').classList.add('hidden');drawMap(false);refresh();report('Sessão limpa. Nenhum dado foi enviado ao servidor.');};
+$('clear-btn').onclick=()=>{records=[];selected.clear();reported=null;center=null;activeLocation=null;displayAudit(null);drawMap(false);refresh();report('Sessão limpa. Nenhum dado foi enviado ao servidor.');};
 function tab(which){const api=which==='api';$('import-panel').classList.toggle('hidden',api);$('api-panel').classList.toggle('hidden',!api);$('tab-api').classList.toggle('active',api);$('tab-import').classList.toggle('active',!api);}
 $('tab-import').onclick=()=>tab('import');$('tab-api').onclick=()=>tab('api');
 const GEO_PORTALS=new Set(['zapimoveis.com.br','vivareal.com.br','chavesnamao.com.br']);
@@ -204,6 +204,20 @@ const SORT_OPTIONS={
  'vivareal.com.br':[['relevance','Relevância'],['date','Mais recentes'],['price','Menor preço'],['biggest_price','Maior preço'],['biggest_area','Maior área']],
  'chavesnamao.com.br':[['relevance','Relevância'],['price','Menor preço'],['biggest_price','Maior preço']]
 };
+function syncOlxPilotLocation(){
+  const isOlx=$('portal').value==='olx.com.br';
+  const local=isOlx&&canon($('city').value)==='salto de pirapora'&&canon($('state').value)==='sp';
+  $('olx-reference').classList.toggle('hidden',!local||$('operation').value==='pdp');
+  if(local&&['','sorocaba'].includes(canon($('olx-region').value)))
+    $('olx-region').value='Regiao de Sorocaba';
+  if(isOlx){
+    const category=$('olx-category');
+    if($('property-type').value==='house'&&$('business-type').value==='sale'&&category.value==='imoveis')
+      category.value='imoveis/venda/casas';
+    else if(($('property-type').value!=='house'||$('business-type').value!=='sale')&&category.value==='imoveis/venda/casas')
+      category.value='imoveis';
+  }
+}
 function syncForm(){
   const portal=$('portal').value,pdp=$('operation').value==='pdp';
   $('pdp-wrap').classList.toggle('hidden',!pdp);
@@ -213,6 +227,7 @@ function syncForm(){
   $('olx-category-wrap').classList.toggle('hidden',pdp||portal!=='olx.com.br');
   $('olx-region').disabled=pdp||portal!=='olx.com.br';
   $('olx-category').disabled=pdp||portal!=='olx.com.br';
+  syncOlxPilotLocation();
   for(const id of ['city','state','page','keyword','property-type','neighborhood','price-min','price-max','area-min','area-max','bedrooms-min','bathrooms-min','parking-min','search-near','search-url','business-type','sort']){
     $(id).disabled=pdp;
   }
@@ -236,6 +251,8 @@ function syncForm(){
 }
 $('operation').onchange=syncForm;
 $('portal').onchange=syncForm;
+for(const id of ['city','state','property-type','business-type'])
+  $(id).addEventListener('change',syncOlxPilotLocation);
 syncForm();
 async function callApi(query){
   const response=await fetch('/api/extract',{
@@ -282,15 +299,31 @@ function mirrorLocalFilters(query){
   for(const [from,to] of table)$(to).value=query[from]??'';
 }
 function displayAudit(a){
-  const el=$('location-audit');
-  if(!a){el.classList.add('hidden');el.textContent='';return;}
+  const el=$('location-audit'),origin=$('origin-audit'),originLink=$('origin-url');
+  if(!a){
+    el.classList.add('hidden');el.textContent='';
+    origin.classList.add('hidden');originLink.removeAttribute('href');
+    return;
+  }
   el.classList.remove('hidden');
   el.classList.toggle('error',a.acceptedItems===0);
   el.textContent='Cidade conferida: '+a.requestedCity+'/'+a.requestedState+'. '+
     a.acceptedItems+' de '+a.providerItems+' anúncios desta página pertencem ao município informado. '+
     a.discardedOtherCities+' de outras cidades e '+a.discardedMissingLocation+
-    ' sem localização verificável foram descartados. '+
-    'Total geral informado pelo portal não significa total válido para esta cidade.';
+    ' sem localização verificável foram descartados. O total geral do portal pode incluir outras localidades.';
+  const check=a.requestUrlCheck;
+  if(!check||check.status==='not_applicable'){origin.classList.add('hidden');return;}
+  origin.classList.remove('hidden');
+  origin.classList.toggle('error',check.status==='mismatch');
+  const label={
+    match:'A URL contém o estado, região e município solicitados. Isso não garante que os anúncios retornados estejam corretos.',
+    mismatch:'ATENÇÃO: a GeckoAPI montou a URL sem todos os segmentos de localização solicitados.',
+    provided:'A API recebeu uma URL pronta; confira se ela contém os filtros de localização.',
+    unknown:'Não foi possível verificar o endereço da pesquisa enviado pelo fornecedor.'
+  };
+  $('origin-analysis').textContent=(label[check.status]||'')+(check.missingSegments?.length?' Faltando: '+check.missingSegments.join(', '):'');
+  originLink.classList.toggle('hidden',!check.url);
+  if(check.url){originLink.href=check.url;}else originLink.removeAttribute('href');
 }
 function setActiveLocation(query) {
   const next={city:canon(query.city),state:canon(query.state),label:query.city+'/'+query.state};
