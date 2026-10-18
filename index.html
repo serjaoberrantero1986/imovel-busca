@@ -37,8 +37,13 @@
 <label class="field">Mín. banheiros<input id="bathrooms-min" type="number" min="0" max="20" placeholder="Ex.: 2"></label>
 <label class="field">Mín. vagas<input id="parking-min" type="number" min="0" max="20" placeholder="Ex.: 1"></label>
 <div class="span3" style="display:grid;gap:5px;align-self:center"><label class="inline muted"><input type="checkbox" id="search-near"> Pesquisar próximo ao centro do mapa</label><span class="hint" id="near-hint" style="margin:0">Nos portais compatíveis, a API limita a área a 2 km. O círculo do mapa é um filtro independente.</span></div>
+
+<label class="field">Finalidade<select id="business-type"><option value="sale">Venda</option><option value="rent">Aluguel</option></select></label>
+<label class="field">Ordenar<select id="sort"><option value="">Padrão do portal</option></select></label>
 <label class="field span2 hidden" id="olx-region-wrap">Região da OLX (opcional)<input id="olx-region" placeholder="Ex.: Região de Sorocaba"></label>
-<label class="field span3 hidden" id="search-url-wrap">URL de pesquisa (opcional na OLX; obrigatória no Imovelweb)<input id="search-url" placeholder="https://www.olx.com.br/..."></label>
+<label class="field span2 hidden" id="olx-category-wrap">Categoria OLX<input id="olx-category" value="imoveis" placeholder="imoveis"></label>
+<label class="field span3 hidden" id="search-url-wrap">URL da página de resultados<input id="search-url" placeholder="https://www.olx.com.br/..."></label>
+<label class="field span3"><span class="hint" id="url-help">Uma URL de pesquisa pode substituir os filtros estruturados do portal. A cidade/UF continuam validadas na resposta.</span></label>
 <div class="span3 controls"><button class="primary" id="api-btn">Consultar API (consome créditos)</button><span class="muted" id="provider-hint"></span></div>
 </div>
 <p class="hint">Consulta real pode consumir créditos. A chave GeckoAPI fica no servidor, nunca no navegador. Não informe sua chave privada no campo de código de acesso.</p>
