@@ -80,44 +80,74 @@ if (hasMap) {
 function duplicate(p) {
   return records.some(q => q.key !== p.key && p.price !== null && q.price === p.price && p.usable !== null && q.usable === p.usable && p.neighborhood !== '—' && q.neighborhood.toLowerCase() === p.neighborhood.toLowerCase());
 }
-function drawMap(recenter) {
-  if (!map) return;
-  layer.clearLayers(); if (ring) map.removeLayer(ring); if (anchor) map.removeLayer(anchor); ring = null; anchor = null;
-  const located = records.filter(validPoint);
-  if (!located.length) {center=null;return;}
-  if (!center || recenter) center = {lat:located.reduce((s,p)=>s+p.lat,0)/located.length,lng:located.reduce((s,p)=>s+p.lng,0)/located.length};
-  ring = L.circle([center.lat,center.lng],{radius:Number($('radius').value)*1000,color:'#e95335',weight:2,fillOpacity:.06,dashArray:'7 5'}).addTo(map);
-  const pinIcon = (label,klass='') => L.divIcon({html:'<span class="pin ' + klass + '">' + safe(label) + '</span>',className:'',iconSize:[30,30],iconAnchor:[15,15]});
-  anchor = L.marker([center.lat,center.lng],{draggable:true,icon:pinIcon('⌖','center')}).addTo(map);
-  anchor.bindTooltip('Arraste para deslocar o raio');
-  anchor.on('dragend',()=>{const p=anchor.getLatLng();center={lat:p.lat,lng:p.lng};ring.setLatLng(p);renderCards();});
-  const bounds=[];
-  located.forEach((p,i)=>{
-    const marker=L.marker([p.lat,p.lng],{icon:pinIcon(String(records.indexOf(p)+1),p.approx?'approx':'')}).addTo(layer);
-    marker.bindPopup('<strong>'+safe(p.title)+'</strong><div>'+safe(money(p.price))+'</div><small>'+(p.approx?'Localização aproximada':'Ponto do portal, não certificado')+'</small>');
-    bounds.push([p.lat,p.lng]);
+const valueOf = id => {const v=$(id).value.trim();return v===''?null:Number(v);};
+function visibleRecords(){
+  const minBeds=Number($('min-beds').value)||0;
+  const type=$('result-type').value,neigh=canon($('filter-neighborhood').value.trim());
+  const pMin=valueOf('filter-price-min'),pMax=valueOf('filter-price-max');
+  const aMin=valueOf('filter-area-min'),aMax=valueOf('filter-area-max');
+  const onlyRadius=$('in-radius').checked,km=Number($('radius').value);
+  return records.filter(p=>{
+    if(type&&p.type!==type)return false;
+    if(neigh&&!canon(p.neighborhood).includes(neigh))return false;
+    if(minBeds&&(p.beds===null||p.beds<minBeds))return false;
+    if(pMin!==null&&(p.price===null||p.price<pMin))return false;
+    if(pMax!==null&&(p.price===null||p.price>pMax))return false;
+    if(aMin!==null&&(p.usable===null||p.usable<aMin))return false;
+    if(aMax!==null&&(p.usable===null||p.usable>aMax))return false;
+    if(onlyRadius&&(!validPoint(p)||distance(center,p)>km))return false;
+    return true;
   });
-  if (recenter) map.fitBounds(L.latLngBounds(bounds).pad(.16),{maxZoom:14});
 }
+const pinIcon=(label,klass='')=>L.divIcon({html:'<span class="pin '+klass+'">'+safe(label)+'</span>',className:'',iconSize:[30,30],iconAnchor:[15,15]});
+function renderMarkers(){
+  if(!map||!layer)return;
+  layer.clearLayers();
+  for(const p of visibleRecords().filter(validPoint)){
+    const marker=L.marker([p.lat,p.lng],{icon:pinIcon(String(records.indexOf(p)+1),p.approx?'approx':'')}).addTo(layer);
+    marker.bindPopup('<strong>'+safe(p.title)+'</strong><div>'+safe(money(p.price))+'</div><small>'+safe(typeLabel[p.type]||'Tipo a revisar')+'</small>');
+  }
+}
+function drawMap(recenter=false){
+  if(!map)return;
+  if(ring){map.removeLayer(ring);ring=null;}
+  if(anchor){map.removeLayer(anchor);anchor=null;}
+  const located=records.filter(validPoint);
+  if((!center||recenter)&&located.length)center={lat:located.reduce((sum,p)=>sum+p.lat,0)/located.length,lng:located.reduce((sum,p)=>sum+p.lng,0)/located.length};
+  if(center){
+    ring=L.circle([center.lat,center.lng],{radius:Number($('radius').value)*1000,color:'#e95335',weight:2,fillOpacity:.06,dashArray:'7 5'}).addTo(map);
+    anchor=L.marker([center.lat,center.lng],{draggable:true,icon:pinIcon('⌖','center')}).addTo(map);
+    anchor.bindTooltip('Arraste para mover o centro da pesquisa');
+    anchor.on('dragend',()=>{const p=anchor.getLatLng();center={lat:p.lat,lng:p.lng};ring.setLatLng(p);refresh();});
+  }
+  renderMarkers();
+  if(recenter&&located.length)map.fitBounds(L.latLngBounds(located.map(p=>[p.lat,p.lng])).pad(.16),{maxZoom:14});
+}
+if(map)map.on('click',event=>{center={lat:event.latlng.lat,lng:event.latlng.lng};drawMap(false);refresh();});
 function renderCards() {
-  const onlyRadius = $('in-radius').checked, km = Number($('radius').value), minBeds=Number($('min-beds').value)||0;
   const box = $('results'); box.replaceChildren();
-  const visible = records.filter(p=>(!onlyRadius || (validPoint(p)&&distance(center,p)<=km))&&(p.beds===null ? minBeds===0 : p.beds>=minBeds));
+  const visible = visibleRecords();
+  $('filter-status').textContent = visible.length + ' de ' + records.length + ' anúncios visíveis com os filtros atuais.';
   if (!visible.length) {const el=document.createElement('p');el.className='muted';el.textContent='Nenhum anúncio corresponde aos filtros.';box.appendChild(el);}
   for (const p of visible) {
     const card=document.createElement('article'); card.className='listing'+(selected.has(p.key)?' selected':'');
     const dis=distance(center,p), flag=$('dedupe').checked&&duplicate(p);
     card.innerHTML =
       '<div class="row between"><span class="pill">'+safe(p.source)+'</span><span class="muted">'+(validPoint(p)?(p.approx?'📍 Aproximada':'📍 Não certificada'):'Sem coordenadas')+'</span></div>'+
-      '<h3>'+safe(p.title)+'</h3><div class="price">'+safe(money(p.price))+'</div>'+
+      '<h3>'+safe(p.title)+'</h3><div class="row"><span class="pill orange">'+safe(typeLabel[p.type]||'A classificar')+'</span></div><div class="price">'+safe(money(p.price))+'</div>'+
       '<div class="row"><span class="pill">'+safe(text(p.usable))+' m² úteis</span><span class="pill">'+safe(text(p.beds))+' dorm.</span><span class="pill">'+safe(text(p.suites))+' suítes</span><span class="pill">'+safe(text(p.baths))+' banh.</span><span class="pill">'+safe(text(p.spaces))+' vagas</span></div>'+
       '<div class="muted">'+safe(p.neighborhood)+' · '+safe(p.city)+(dis!==null?' · '+dis.toFixed(1)+' km do centro':'')+'</div>'+
       (flag?'<span class="pill orange">Possível duplicidade — revisar</span>':'')+
-      '<div class="row between"><label class="check"><input class="pick" type="checkbox" '+(selected.has(p.key)?'checked':'')+'> Comparar</label>'+(p.link?'<a class="link" target="_blank" rel="noopener noreferrer" href="'+safe(p.link)+'">Ver anúncio ↗</a>':'')+'</div>';
+      '<div class="row between"><label class="check"><input class="pick" type="checkbox" '+(selected.has(p.key)?'checked':'')+'> Comparar</label>'+(p.link?'<a class="link" target="_blank" rel="noopener noreferrer" href="'+safe(p.link)+'">Ver anúncio ↗</a>':'')+'</div>'+
+      (p.link&&['zapimoveis.com.br','olx.com.br','imovelweb.com.br','vivareal.com.br','chavesnamao.com.br'].includes(p.source)?'<button class="detail" type="button">Buscar detalhes (PDP) · pode consumir créditos</button>':'')+
+      (p.detailed?'<div class="pill orange">Dados adicionais consultados</div>':'');
     card.querySelector('.pick').onchange = event=>{if(event.target.checked)selected.add(p.key);else selected.delete(p.key);refresh();};
+    const details=card.querySelector('.detail');
+    if(details)details.onclick=()=>fetchDetails(p,details);
     box.appendChild(card);
   }
   $('loaded').textContent=records.length;$('total').textContent=reported??'—';$('mapped').textContent=records.filter(validPoint).length;$('picked').textContent=selected.size;
+  renderMarkers();
 }
 function renderComparison() {
   const arr=records.filter(p=>selected.has(p.key)), container=$('comparison');$('export-btn').disabled=arr.length<2;
