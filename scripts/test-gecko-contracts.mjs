@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {buildGeckoPayload,auditLocation,responseEnvelope} from '../lib/geckoContracts.mjs';
+import {buildGeckoPayload,auditLocation,auditOlxRequestUrl,responseEnvelope} from '../lib/geckoContracts.mjs';
 const city='Salto de Pirapora',state='SP';
 test('OLX: cURL oficial com cidade, região, categoria e ordenação',()=>{
   const p=buildGeckoPayload({
@@ -90,4 +90,25 @@ test('Formatação Chaves: resposta direta normalizada para envelope',()=>{
   const e=responseEnvelope(direct);
   assert.equal(e.data.source,'chavesnamao.com.br');
   assert.equal(e.data.items.length,1);
+});
+
+
+test('OLX Salto de Pirapora: preencher região oficial e categoria de casas',()=>{
+ const p=buildGeckoPayload({target:'olx.com.br',type:'plp',city:'Salto de Pirapora',state:'SP',region:'Sorocaba',propertyType:'house',businessType:'sale'});
+ assert.equal(p.region,'Regiao de Sorocaba');
+ assert.equal(p.categoryPath,'imoveis/venda/casas');
+ const noRegion=buildGeckoPayload({target:'olx.com.br',type:'plp',city:'Salto de Pirapora',state:'SP',propertyType:'house'});
+ assert.equal(noRegion.region,'Regiao de Sorocaba');
+});
+test('OLX URL de origem: reconhecer pesquisa local com segmentos corretos',()=>{
+ const p=buildGeckoPayload({target:'olx.com.br',type:'plp',city:'Salto de Pirapora',state:'SP',propertyType:'house'});
+ const url='https://www.olx.com.br/imoveis/venda/casas/estado-sp/regiao-de-sorocaba/salto-de-pirapora?q=casa';
+ const ok=auditOlxRequestUrl({requestUrl:url},p);
+ assert.equal(ok.status,'match');
+ assert.equal(ok.url,url);
+ const wrong=auditOlxRequestUrl({requestUrl:'https://www.olx.com.br/imoveis/estado-sp/sorocaba?q=casa'},p);
+ assert.equal(wrong.status,'mismatch');
+ assert.deepEqual(wrong.missingSegments,['regiao-de-sorocaba','salto-de-pirapora']);
+ const missing=auditOlxRequestUrl({},p);
+ assert.equal(missing.status,'unknown');
 });
