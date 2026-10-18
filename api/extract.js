@@ -25,6 +25,33 @@ function validUrl(raw,target) {
   }catch{return false;}
 }
 function optionalText(raw,max) {return typeof raw==='string'?raw.trim().slice(0,max):'';}
+function normalizeLocation(value){
+  return String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().replace(/\s+/g,' ');
+}
+function locationAudit(data,city,state){
+  const original=Array.isArray(data?.items)?data.items:[];
+  const wantedCity=normalizeLocation(city),wantedState=normalizeLocation(state);
+  let discardedUnknown=0,discardedOther=0;
+  const filtered=original.filter(item=>{
+    const location=item?.location||item?.address||{};
+    const actualCity=normalizeLocation(location.city||item.city);
+    const actualState=normalizeLocation(location.state||item.state);
+    if(!actualCity||!actualState){discardedUnknown++;return false;}
+    if(actualCity!==wantedCity||actualState!==wantedState){discardedOther++;return false;}
+    return true;
+  });
+  return {
+    items:filtered,
+    audit:{
+      requestedCity:city,requestedState:state,
+      providerItems:original.length,acceptedItems:filtered.length,
+      discardedOtherCities:discardedOther,discardedMissingLocation:discardedUnknown,
+      sourceTotalResults:typeof data?.totalResults==='number'?data.totalResults:null,
+      exactMunicipality:true
+    }
+  };
+}
+
 function optionalInteger(raw,max=100000000) {
   if(raw===null||raw===undefined||raw==='')return null;
   const n=Number(raw);
@@ -49,6 +76,10 @@ function queryForProvider(body) {
     payload.url=body.url;
     return payload;
   }
+  // Cidade/UF são obrigatórias também quando a fonte recebe uma URL pronta:
+  // a URL sobrepõe os filtros upstream, mas jamais desliga a validação do retorno.
+  const city=optionalText(body.city,90),state=optionalText(body.state,2).toUpperCase();
+  if(city.length<2||!/^[A-Z]{2}$/.test(state))throw new Error('Preencha cidade e UF válidas para validar os anúncios.');
   if(body.url) {
     if(!['olx.com.br','imovelweb.com.br'].includes(target)||typeof body.url!=='string'||body.url.length>2300||!validUrl(body.url,target))
       throw new Error('Este portal não aceita URL personalizada nesta modalidade.');
@@ -56,8 +87,6 @@ function queryForProvider(body) {
     return payload;
   }
   if(target==='imovelweb.com.br') throw new Error('Para pesquisar no Imovelweb, informe a URL de uma página de resultados do portal.');
-  const city=optionalText(body.city,90),state=optionalText(body.state,2).toUpperCase();
-  if(city.length<2||!/^[A-Z]{2}$/.test(state))throw new Error('Preencha cidade e UF válidas.');
   payload.city=city;
   payload.state=state;
   payload.page=optionalInteger(body.page,50)||1;
@@ -92,6 +121,8 @@ function queryForProvider(body) {
     // A OLX usa categoria e palavras-chave em vez de propertyTypes/coords.
     // Fixa a categoria de imóveis para não misturar produtos de outros setores.
     payload.categoryPath='imoveis';
+    const region=optionalText(body.region,110);
+    if(region)payload.region=region;
     payload.keyword=word||({house:'casa',apartment:'apartamento',land:'terreno',farm:'chácara',penthouse:'cobertura',commercial_room:'sala comercial',warehouse:'galpão'}[kind]||'imóveis à venda');
     if(kind&&word)payload.keyword+= ' '+({house:'casa',apartment:'apartamento',land:'terreno',farm:'chácara',penthouse:'cobertura',commercial_room:'sala comercial',warehouse:'galpão'}[kind]||'');
   }
@@ -124,6 +155,13 @@ export default async function handler(req,res) {
       providerStatus:upstream.status
     });
     if(!json||typeof json!=='object')return send(res,502,{error:'A fonte respondeu em formato inesperado.'});
+    // Nunca deixar uma PLP de cidade específica devolver imóveis de outros
+    // municípios, mesmo que a fonte ignore, amplie ou reescreva os filtros.
+    if(payload.type==='plp'&&json.data&&typeof json.data==='object') {
+      const filtered=locationAudit(json.data,req.body.city,req.body.state);
+      json.data.items=filtered.items;
+      json.data.locationAudit=filtered.audit;
+    }
     return send(res,200,json);
   } catch(error) {
     return send(res,502,{error:error?.name==='AbortError'?'Consulta excedeu o tempo limite.':'Falha de conexão com a GeckoAPI.'});
