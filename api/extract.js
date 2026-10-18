@@ -89,8 +89,9 @@ function queryForProvider(body) {
       payload.latitude=lat;payload.longitude=lng;
     }
   } else if(target==='olx.com.br') {
-    // A OLX não suporta propertyTypes, bedrooms ou latitude/longitude neste endpoint.
-    // Sem URL personalizada, o portal faz busca por palavra-chave/cidade/UF.
+    // A OLX usa categoria e palavras-chave em vez de propertyTypes/coords.
+    // Fixa a categoria de imóveis para não misturar produtos de outros setores.
+    payload.categoryPath='imoveis';
     payload.keyword=word||({house:'casa',apartment:'apartamento',land:'terreno',farm:'chácara',penthouse:'cobertura',commercial_room:'sala comercial',warehouse:'galpão'}[kind]||'imóveis à venda');
     if(kind&&word)payload.keyword+= ' '+({house:'casa',apartment:'apartamento',land:'terreno',farm:'chácara',penthouse:'cobertura',commercial_room:'sala comercial',warehouse:'galpão'}[kind]||'');
   }
