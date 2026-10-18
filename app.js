@@ -10,8 +10,9 @@ let activeLocation = null;
 
 function canon(value){return String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
 function classify(item) {
-  const units=(Array.isArray(item.unitTypes)?item.unitTypes:[]).map(x=>canon(x)),raw=canon([item.category,item.propertyType,item.typeLabel,item.title].filter(Boolean).join(' '));
-  const match=t=>units.some(u=>t.some(k=>u.includes(k)));
+  const units=(Array.isArray(item.unitTypes)?item.unitTypes:[]).map(canon);
+  const raw=canon([item.realtyType?.name,item.category,item.propertyType,item.typeLabel,item.title].filter(Boolean).join(' '));
+  const match=words=>units.some(u=>words.some(w=>u.includes(w)));
   if(match(['allotment','land','lot'])||/\b(terreno|terrenos|lote|lotes)\b/.test(raw))return 'land';
   if(match(['farm','rural'])||/\b(chacara|chacaras|sitio|sitios|fazenda|fazendas)\b/.test(raw))return 'farm';
   if(match(['penthouse'])||/\b(cobertura|coberturas)\b/.test(raw))return 'penthouse';
@@ -22,49 +23,57 @@ function classify(item) {
   return 'unknown';
 }
 const typeLabel={house:'Casa',apartment:'Apartamento',land:'Terreno',farm:'Chácara/sítio',penthouse:'Cobertura',warehouse:'Galpão',commercial_room:'Sala comercial',unknown:'A classificar'};
-function propValue(item, keys) {
-  if(!Array.isArray(item.properties))return null;
-  const k=keys.map(canon);
-  const found=item.properties.find(p=>k.some(t=>canon([p.name,p.label].join(' ')).includes(t)));
-  const v=found?.value;
-  if(v===null||v===undefined)return null;
-  const m=String(v).match(/[\d.]+(?:,\d+)?/);
-  return m?number(m[0].replace(/\./g,'').replace(',','.')):null;
+function propValue(item,keys) {
+  const all=[...(Array.isArray(item.properties)?item.properties:[]),...(Array.isArray(item.attributes)?item.attributes:[])];
+  const matched=all.find(p=>keys.some(t=>canon([p.name,p.label].join(' ')).includes(canon(t))));
+  const value=matched?.value;
+  if(value===null||value===undefined)return null;
+  const cleaned=String(value).replace(/[^\d,.]/g,'').replace(/\./g,'').replace(',','.');
+  return cleaned&&Number.isFinite(Number(cleaned))?Number(cleaned):null;
 }
+const BR_STATES={AC:'acre',AL:'alagoas',AP:'amapa',AM:'amazonas',BA:'bahia',CE:'ceara',DF:'distrito federal',ES:'espirito santo',GO:'goias',MA:'maranhao',MT:'mato grosso',MS:'mato grosso do sul',MG:'minas gerais',PA:'para',PB:'paraiba',PR:'parana',PE:'pernambuco',PI:'piaui',RJ:'rio de janeiro',RN:'rio grande do norte',RS:'rio grande do sul',RO:'rondonia',RR:'roraima',SC:'santa catarina',SP:'sao paulo',SE:'sergipe',TO:'tocantins'};
+function uf(v) {const x=canon(v);return Object.keys(BR_STATES).find(k=>canon(k)===x||BR_STATES[k]===x)||'';}
 function normalized(item,source) {
-  const a=item.attributes||{},p=item.prices||{},address=item.address||item.location||{},geo=item.coordinates||{};
+  const attr=(!Array.isArray(item.attributes)&&item.attributes)||{};
+  const prices=Array.isArray(item.prices)?item.prices.find(p=>p.businessType==='SALE')||item.prices[0]||{}:item.prices||{};
+  const area=item.area||{},counts=item.counts||{};
+  const address=item.address||item.location||{},geo=item.coordinates||address.coordinates||{};
   const lat=number(address.latitude??geo.latitude??item.latitude);
   const lng=number(address.longitude??geo.longitude??item.longitude);
   const valid=lat!==null&&lng!==null&&Math.abs(lat)<=90&&Math.abs(lng)<=180&&(lat!==0||lng!==0);
-  const listingId=text(item.id||item.listingId||item.externalId||item.listingExternalId||item.url);
+  const id=text(item.id||item.listingId||item.externalId||item.listingExternalId||item.adId||item.url);
+  const take=(key,fallback)=>number(first(attr[key])??fallback);
+  const count=(key,fallback)=>number(counts[key]?.count??fallback);
   const type=classify(item);
   return {
-    id:listingId,key:source+':'+listingId,source,type,
+    id,key:source+':'+id,source,type,
     title:text(item.title||item.name||item.metaTitle||'Imóvel sem título'),
     link:url(item.url||item.listingUrl),
-    price:number(p.mainValue??p.price??item.askingPrice??item.price),
-    usable:number(first(a.usableAreas)??item.usableArea??item.builtArea??propValue(item,['area util','area privativa','area construida'])),
-    total:number(first(a.totalAreas)??item.totalArea??item.landArea??propValue(item,['area total','terreno'])),
-    beds:number(first(a.bedrooms)??item.bedrooms??propValue(item,['quartos','dormitorios'])),
-    suites:number(first(a.suites)??item.suites??propValue(item,['suites'])),
-    baths:number(first(a.bathrooms)??item.bathrooms??propValue(item,['banheiros'])),
-    spaces:number(first(a.parkingSpaces)??item.parkingSpaces??propValue(item,['vagas','garagem'])),
-    floors:number(first(a.floors)??item.floors),
+    price:number(prices.mainValue??prices.value??prices.rawPrice??prices.price??item.askingPrice??item.price),
+    usable:take('usableAreas',area.useful??item.usableArea??item.builtArea??propValue(item,['area util','area privativa','area construida'])),
+    total:take('totalAreas',area.total??item.totalArea??item.landArea??propValue(item,['area total','terreno'])),
+    beds:take('bedrooms',count('bedrooms',item.bedrooms??propValue(item,['quartos','dormitorios']))),
+    suites:take('suites',count('suites',item.suites??propValue(item,['suites']))),
+    baths:take('bathrooms',count('bathrooms',item.bathrooms??propValue(item,['banheiros']))),
+    spaces:take('parkingSpaces',count('garages',item.parkingSpaces??propValue(item,['vagas','garagem']))),
+    floors:take('floors',item.floors),
     neighborhood:text(address.neighborhood||item.neighborhood),
-    city:text(address.city||item.city),state:text(address.state||item.state),
-    lat:valid?lat:null,lng:valid?lng:null,approx:address.isApproximateLocation!==false,
-    amenities:Array.isArray(item.amenities)?item.amenities:[],
+    city:text(address.city||item.city),state:uf(address.stateAcronym||address.state||item.state)||text(address.state||item.state),
+    lat:valid?lat:null,lng:valid?lng:null,
+    approx:address.isApproximateLocation===true||address.approximate===true||address.publicAddress===false,
+    amenities:Array.isArray(item.amenities)?item.amenities:Array.isArray(item.privativeAmenities)?item.privativeAmenities:[],
     advertiser:text(item.advertiser?.name),description:text(item.description),
     detailed:false
   };
 }
 function payload(input) {
   const d=input?.data??input;
-  const leaf=d?.data&&typeof d.data==='object'&&!Array.isArray(d.data)?d.data:d;
+  // VivaReal PDP: data.listing; ZAP, OLX e Chaves PDP: data.data.
+  const leaf=d?.listing??(d?.data&&typeof d.data==='object'&&!Array.isArray(d.data)?d.data:d);
   const arr=Array.isArray(d?.items)?d.items:Array.isArray(d?.results)?d.results:
     d?.item?[d.item]:d?.listing?[d.listing]:d?.property?[d.property]:
     leaf&&(leaf.id||leaf.listingId||leaf.title)?[leaf]:[];
-  if(!arr.length)throw new Error(input?.notFound?'Anúncio não encontrado na fonte.':'A consulta não retornou anúncios. Altere os filtros ou o portal.');
+  if(!arr.length)throw Error(input?.notFound?'Anúncio não encontrado.':'A consulta não retornou anúncios para os filtros usados.');
   const source=d?.source||d?.target||'Fonte externa';
   return {items:arr.map(x=>normalized(x,source)),total:typeof d?.totalResults==='number'?d.totalResults:null};
 }
