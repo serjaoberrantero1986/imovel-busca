@@ -16,7 +16,7 @@ test('OLX: cURL oficial com cidade, região, categoria e ordenação',()=>{
 });
 test('OLX imóveis: categoria nativa e tipologia aproximada por keyword',()=>{
   const p=buildGeckoPayload({target:'olx.com.br',type:'plp',city,state,propertyType:'house'});
-  assert.equal(p.categoryPath,'imoveis');
+  assert.equal(p.categoryPath,'imoveis/venda/casas');
   assert.equal(p.keyword,'casa');
   assert.equal(p.propertyTypes,undefined);
   assert.equal(p.latitude,undefined);
