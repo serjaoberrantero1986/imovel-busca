@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check app.js && node --check api/extract.js",
-    "test": "node --test scripts/test-lab.mjs"
+    "check": "node --check app.js && node --check api/extract.js && node --check lib/geckoContracts.mjs",
+    "test": "node --test scripts/test-lab.mjs scripts/test-gecko-contracts.mjs"
   },
   "engines": {
     "node": ">=20"
