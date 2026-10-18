@@ -9,6 +9,20 @@ Este repositório **não** conecta ao Web Imóveis, Supabase ou domínio de prod
 5. Exporte somente os anúncios selecionados como CSV.
 O número totalResults do fornecedor representa o total reportado; não significa que todas as páginas já foram carregadas. Os resultados não são persistidos no servidor.
 
+## Versão 0.2 — escolha de portais e comparador
+Aba **Consultar GeckoAPI**:
+1. Selecione **Buscar lista (PLP)**.
+2. Em **Portal**, escolha **ZAP Imóveis, OLX, VivaReal, Chaves na Mão ou Imovelweb**.
+3. Para ZAP, VivaReal e Chaves na Mão, informe cidade/UF e opcionalmente tipo, bairro, preço, área útil e uma busca por coordenadas. O servidor transmite os filtros estruturados suportados. Na busca por coordenadas, a GeckoAPI usa **2 km fixos** — não confunda com o raio visual de 1–50 km.
+4. Para OLX, informe cidade/UF, escolha **Casa** (ou outro tipo), e consulte. O servidor usa a categoria **Imóveis** e busca textual, sem afirmar que a OLX suporta filtro estruturado de tipologia ou coordenadas. Se quiser reproduzir os filtros do próprio portal, cole uma URL de resultado da OLX no campo correspondente; a URL terá prioridade.
+5. Para Imovelweb, forneça URL HTTPS de uma **página de resultados** do Imovelweb; a API não recebe filtros estruturados nessa modalidade.
+6. Clique **Consultar API** e confirme o consumo de créditos. Páginas seguintes podem ser buscadas ajustando o número da página.
+7. Filtre a lista pela tipologia identificada, bairro, preço, área útil, dormitórios, banheiros e vagas. Marcadores acompanham o filtro local. Imóveis sem coordenadas continuam na lista, não recebem um pino inventado.
+8. Clique **Buscar detalhes (PDP)** num anúncio para consultar sua ficha individual. Essa consulta também pode consumir créditos; confirme antes de executar. A ficha pode preencher novas informações disponíveis, sem presumir atributos ausentes.
+9. Selecione pelo menos dois anúncios e exporte seu CSV.
+
+**Atenção**: a seleção de outro portal não exclui as consultas anteriores: resultados são acumulados por identificador de fonte, permitindo comparar OLX e ZAP. Use **Limpar sessão** para começar do zero. A existência de links, fotos e dados disponíveis tecnicamente não implica autorização de redistribuição comercial.
+
 ## Habilitar consultas PLP/PDP
 No projeto **imovel-busca** da Vercel, em Settings → Environment Variables, crie:
 - GECKO_API_TOKEN: token de API da GeckoAPI, como variável Sensitive/Encrypted.
