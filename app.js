@@ -11,7 +11,7 @@ let activeLocation = null;
 function canon(value){return String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
 function classify(item) {
   const units=(Array.isArray(item.unitTypes)?item.unitTypes:[]).map(canon);
-  const raw=canon([item.realtyType?.name,item.category,item.propertyType,item.typeLabel,item.title].filter(Boolean).join(' '));
+  const raw=canon([item.realtyType?.name,item.property?.type,item.category,item.propertyType,item.typeLabel,item.title].filter(Boolean).join(' '));
   const match=words=>units.some(u=>words.some(w=>u.includes(w)));
   if(match(['allotment','land','lot'])||/\b(terreno|terrenos|lote|lotes)\b/.test(raw))return 'land';
   if(match(['farm','rural'])||/\b(chacara|chacaras|sitio|sitios|fazenda|fazendas)\b/.test(raw))return 'farm';
@@ -47,22 +47,22 @@ function normalized(item,source) {
   const type=classify(item);
   return {
     id,key:source+':'+id,source,type,
-    title:text(item.title||item.name||item.metaTitle||'Imóvel sem título'),
+    title:text(item.title||item.generatedTitle||item.name||item.metaTitle||'Imóvel sem título'),
     link:url(item.url||item.listingUrl),
-    price:number(prices.mainValue??prices.value??prices.rawPrice??prices.price??item.askingPrice??item.price),
-    usable:take('usableAreas',area.useful??item.usableArea??item.builtArea??propValue(item,['area util','area privativa','area construida'])),
-    total:take('totalAreas',area.total??item.totalArea??item.landArea??propValue(item,['area total','terreno'])),
-    beds:take('bedrooms',count('bedrooms',item.bedrooms??propValue(item,['quartos','dormitorios']))),
-    suites:take('suites',count('suites',item.suites??propValue(item,['suites']))),
-    baths:take('bathrooms',count('bathrooms',item.bathrooms??propValue(item,['banheiros']))),
-    spaces:take('parkingSpaces',count('garages',item.parkingSpaces??propValue(item,['vagas','garagem']))),
+    price:number(prices.mainValue??prices.value??prices.rawPrice??prices.price??item.askingPrice??item.price?.amount??item.price),
+    usable:take('usableAreas',area.useful??item.property?.usableArea??item.usableArea??item.builtArea??propValue(item,['area util','area privativa','area construida'])),
+    total:take('totalAreas',area.total??item.property?.totalArea??item.totalArea??item.landArea??propValue(item,['area total','terreno'])),
+    beds:take('bedrooms',count('bedrooms',item.property?.bedrooms??item.bedrooms??propValue(item,['quartos','dormitorios']))),
+    suites:take('suites',count('suites',item.property?.suites??item.suites??propValue(item,['suites']))),
+    baths:take('bathrooms',count('bathrooms',item.property?.bathrooms??item.bathrooms??propValue(item,['banheiros']))),
+    spaces:take('parkingSpaces',count('garages',item.property?.parkingSpaces??item.parkingSpaces??propValue(item,['vagas','garagem']))),
     floors:take('floors',item.floors),
     neighborhood:text(address.neighborhood||item.neighborhood),
-    city:text(address.city||item.city),state:uf(address.stateAcronym||address.state||item.state)||text(address.state||item.state),
+    city:text(address.city||item.city),state:uf(address.stateAcronym||address.stateCode||address.state||item.state)||text(address.state||item.state),
     lat:valid?lat:null,lng:valid?lng:null,
     approx:address.isApproximateLocation===true||address.approximate===true||address.publicAddress===false,
     amenities:Array.isArray(item.amenities)?item.amenities:Array.isArray(item.privativeAmenities)?item.privativeAmenities:[],
-    advertiser:text(item.advertiser?.name),description:text(item.description),
+    advertiser:text(item.advertiser?.name||item.publisher?.name),description:text(item.description),
     detailed:false
   };
 }
@@ -74,8 +74,8 @@ function payload(input) {
     d?.item?[d.item]:d?.listing?[d.listing]:d?.property?[d.property]:
     leaf&&(leaf.id||leaf.listingId||leaf.title)?[leaf]:[];
   if(!arr.length)throw Error(input?.notFound?'Anúncio não encontrado.':'A consulta não retornou anúncios para os filtros usados.');
-  const source=d?.source||d?.target||'Fonte externa';
-  return {items:arr.map(x=>normalized(x,source)),total:typeof d?.totalResults==='number'?d.totalResults:null};
+  const source=d?.source||input?.source||d?.target||'Fonte externa';
+  return {items:arr.map(x=>normalized(x,source)),total:typeof d?.totalResults==='number'?d.totalResults:typeof d?.total==='number'?d.total:null};
 }
 function report(message, error=false) { $('status').textContent = message; $('status').className = error ? 'status error' : 'status'; }
 const validPoint = p => p.lat !== null && p.lng !== null;
