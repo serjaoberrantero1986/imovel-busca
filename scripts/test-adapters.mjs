@@ -50,3 +50,26 @@ test('OLX PDP: atributos em array e localização sem coordenada',()=>{
   assert.equal(x.items[0].price,250000);assert.equal(x.items[0].beds,3);
   assert.equal(x.items[0].total,175);assert.equal(x.items[0].lat,null);
 });
+
+
+test('Imovelweb PLP: preço objeto, property e UF via stateCode',()=>{
+  const x=ctx.payload({source:'imovelweb.com.br',type:'plp',total:18,items:[{
+    id:'500',generatedTitle:'Casa com 2 quartos',price:{amount:298000},
+    property:{type:'Casa',totalArea:175,usableArea:93,bedrooms:2,bathrooms:1,suites:0,parkingSpaces:1},
+    address:{city:'Salto de Pirapora',state:'São Paulo',stateCode:'SP',latitude:-23.65,longitude:-47.58},
+    publisher:{name:'Imobiliária de teste'}
+  }]});
+  const p=x.items[0];assert.equal(p.price,298000);assert.equal(p.type,'house');
+  assert.equal(p.total,175);assert.equal(p.usable,93);assert.equal(p.beds,2);
+  assert.equal(p.state,'SP');assert.equal(p.advertiser,'Imobiliária de teste');
+  assert.equal(x.total,18);
+});
+test('Imovelweb PDP: data dentro de envelope, com campos reais do portal',()=>{
+  const x=ctx.payload({data:{source:'imovelweb.com.br',type:'pdp',data:{
+    id:'600',title:'Apartamento com varanda',price:{amount:450000},
+    property:{type:'Apartamento',totalArea:95,usableArea:80,bedrooms:3},
+    address:{city:'Salto de Pirapora',state:'SP'}
+  }}});
+  assert.equal(x.items[0].price,450000);assert.equal(x.items[0].type,'apartment');
+  assert.equal(x.items[0].beds,3);
+});
