@@ -6,6 +6,7 @@ const safe = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&am
 const url = value => { try {const u = new URL(value); return ['https:','http:'].includes(u.protocol) ? u.href : null} catch {return null;} };
 const text = value => value === null || value === undefined || value === '' ? '—' : String(value);
 let records = [], selected = new Set(), reported = null, center = null, map = null, ring = null, anchor = null, layer = null;
+let activeLocation = null;
 
 function canon(value){return String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
 function classify(item) {
@@ -50,7 +51,7 @@ function normalized(item,source) {
     spaces:number(first(a.parkingSpaces)??item.parkingSpaces??propValue(item,['vagas','garagem'])),
     floors:number(first(a.floors)??item.floors),
     neighborhood:text(address.neighborhood||item.neighborhood),
-    city:text(address.city||item.city),
+    city:text(address.city||item.city),state:text(address.state||item.state),
     lat:valid?lat:null,lng:valid?lng:null,approx:address.isApproximateLocation!==false,
     amenities:Array.isArray(item.amenities)?item.amenities:[],
     advertiser:text(item.advertiser?.name),description:text(item.description),
@@ -89,6 +90,7 @@ function visibleRecords(){
   const minBaths=valueOf('filter-bathrooms-min'),minSpaces=valueOf('filter-parking-min');
   const onlyRadius=$('in-radius').checked,km=Number($('radius').value);
   return records.filter(p=>{
+    if(activeLocation&&(canon(p.city)!==activeLocation.city||canon(p.state)!==activeLocation.state))return false;
     if(type&&p.type!==type)return false;
     if(neigh&&!canon(p.neighborhood).includes(neigh))return false;
     if(minBeds&&(p.beds===null||p.beds<minBeds))return false;
@@ -130,7 +132,7 @@ if(map)map.on('click',event=>{center={lat:event.latlng.lat,lng:event.latlng.lng}
 function renderCards() {
   const box = $('results'); box.replaceChildren();
   const visible = visibleRecords();
-  $('filter-status').textContent = visible.length + ' de ' + records.length + ' anúncios visíveis com os filtros atuais.';
+  $('filter-status').textContent = visible.length + ' de ' + records.length + ' anúncios visíveis com os filtros atuais.'+(activeLocation?' Município: '+activeLocation.label+'.':'');
   if (!visible.length) {const el=document.createElement('p');el.className='muted';el.textContent='Nenhum anúncio corresponde aos filtros.';box.appendChild(el);}
   for (const p of visible) {
     const card=document.createElement('article'); card.className='listing'+(selected.has(p.key)?' selected':'');
@@ -183,8 +185,8 @@ function load(input) {
   drawMap(true);refresh();
   report('Importação concluída: '+data.items.length+' anúncios nesta consulta e '+records.length+' únicos por ID/fonte na sessão. Dados sujeitos a revisão.');
 }
-$('import-btn').onclick=()=>{try{load(JSON.parse($('json-input').value));}catch(e){report(e.message||'JSON inválido',true);}};
-$('clear-btn').onclick=()=>{records=[];selected.clear();reported=null;drawMap(true);refresh();report('Sessão limpa. Nenhum dado foi enviado ao servidor.');};
+$('import-btn').onclick=()=>{try{activeLocation=null;displayAudit(null);load(JSON.parse($('json-input').value));}catch(e){report(e.message||'JSON inválido',true);}};
+$('clear-btn').onclick=()=>{records=[];selected.clear();reported=null;center=null;activeLocation=null;$('location-audit').classList.add('hidden');drawMap(false);refresh();report('Sessão limpa. Nenhum dado foi enviado ao servidor.');};
 function tab(which){const api=which==='api';$('import-panel').classList.toggle('hidden',api);$('api-panel').classList.toggle('hidden',!api);$('tab-api').classList.toggle('active',api);$('tab-import').classList.toggle('active',!api);}
 $('tab-import').onclick=()=>tab('import');$('tab-api').onclick=()=>tab('api');
 const GEO_PORTALS=new Set(['zapimoveis.com.br','vivareal.com.br','chavesnamao.com.br']);
@@ -192,13 +194,15 @@ function syncForm(){
   const portal=$('portal').value,pdp=$('operation').value==='pdp';
   $('pdp-wrap').classList.toggle('hidden',!pdp);
   $('search-url-wrap').classList.toggle('hidden',pdp||!['olx.com.br','imovelweb.com.br'].includes(portal));
+  $('olx-region-wrap').classList.toggle('hidden',pdp||portal!=='olx.com.br');
+  $('olx-region').disabled=pdp||portal!=='olx.com.br';
   for(const id of ['city','state','page','keyword','property-type','neighborhood','price-min','price-max','area-min','area-max','bedrooms-min','bathrooms-min','parking-min','search-near','search-url']){
     $(id).disabled=pdp;
   }
   $('search-near').disabled=pdp||!GEO_PORTALS.has(portal);
   if(!GEO_PORTALS.has(portal))$('search-near').checked=false;
   $('provider-hint').textContent=pdp?'Detalhamento de uma URL por vez.':
-    portal==='olx.com.br'?'OLX: busca textual/UF/cidade ou URL; tipo e área refinados na lista.':
+    portal==='olx.com.br'?'OLX: use também a região. Validamos cidade e UF dos anúncios retornados; a busca pode retornar zero resultados úteis.':
     portal==='imovelweb.com.br'?'Imovelweb: cole a URL da página de resultados; filtros na lista.':
     'Filtros nativos de tipo, preço e área; mínimos de cômodos filtrados na lista.';
 }
@@ -225,6 +229,7 @@ function queryFilters(){
   query.state=$('state').value.trim().toUpperCase();
   query.page=Number($('page').value);
   query.keyword=$('keyword').value.trim();
+  if(target==='olx.com.br')query.region=$('olx-region').value.trim();
   query.propertyType=$('property-type').value;
   query.neighborhood=$('neighborhood').value.trim();
   const searchUrl=$('search-url').value.trim();
@@ -246,17 +251,52 @@ function mirrorLocalFilters(query){
   const table=[['priceMin','filter-price-min'],['priceMax','filter-price-max'],['areaMin','filter-area-min'],['areaMax','filter-area-max'],['bedrooms','min-beds'],['bathrooms','filter-bathrooms-min'],['parkingSpots','filter-parking-min']];
   for(const [from,to] of table)$(to).value=query[from]??'';
 }
+function displayAudit(a){
+  const el=$('location-audit');
+  if(!a){el.classList.add('hidden');el.textContent='';return;}
+  el.classList.remove('hidden');
+  el.classList.toggle('error',a.acceptedItems===0);
+  el.textContent='Cidade conferida: '+a.requestedCity+'/'+a.requestedState+'. '+
+    a.acceptedItems+' de '+a.providerItems+' anúncios desta página pertencem ao município informado. '+
+    a.discardedOtherCities+' de outras cidades e '+a.discardedMissingLocation+
+    ' sem localização verificável foram descartados. '+
+    'Total geral informado pelo portal não significa total válido para esta cidade.';
+}
+function setActiveLocation(query) {
+  const next={city:canon(query.city),state:canon(query.state),label:query.city+'/'+query.state};
+  if(!activeLocation||activeLocation.city!==next.city||activeLocation.state!==next.state) {
+    records=[];selected.clear();reported=null;center=null;drawMap(false);
+  }
+  activeLocation=next;
+}
 $('api-btn').onclick=async()=>{
   const button=$('api-btn');let query;
   try{query=queryFilters();}catch(e){report(e.message,true);return;}
   if(!$('access').value){report('Informe o código de acesso do laboratório, não o token da GeckoAPI.',true);return;}
   if(!window.confirm('Esta consulta à GeckoAPI poderá consumir créditos. Deseja continuar?'))return;
   button.disabled=true;report('Consultando '+query.target+'... Aguarde alguns segundos.');
-  try{
+  try {
     const body=await callApi(query);
     if(body?.notFound||body?.data===null){report('O provedor não retornou anúncios para essa consulta.',true);return;}
-    mirrorLocalFilters(query);
+    const audit=query.type==='plp'?body?.data?.locationAudit:null;
+    if(query.type==='plp') {
+      setActiveLocation(query);
+      mirrorLocalFilters(query);
+      displayAudit(audit);
+    }
+    if(query.type==='plp'&&Array.isArray(body?.data?.items)&&body.data.items.length===0){
+      refresh();
+      const reason=audit?.providerItems>0?
+        'A fonte retornou '+audit.providerItems+' anúncios nesta página, mas nenhum com cidade e UF confirmadas em '+query.city+'/'+query.state+'. Os anúncios de outros locais foram descartados.':
+        'Nenhum anúncio retornou nesta página para '+query.city+'/'+query.state+'.';
+      report(reason+' Na OLX, experimente informar a Região ou colar a URL da busca local feita no site.',true);
+      return;
+    }
     load(body);
+    if(audit&&audit.discardedOtherCities+audit.discardedMissingLocation>0){
+      report(audit.acceptedItems+' anúncios válidos em '+query.city+'/'+query.state+
+        '; '+(audit.discardedOtherCities+audit.discardedMissingLocation)+' descartados por município diferente ou endereço não confirmado.');
+    }
   }catch(e){report(e.message||'Falha de conexão',true);}
   finally{button.disabled=false;}
 };
@@ -295,7 +335,7 @@ for(const id of ['in-radius','min-beds','dedupe','result-type','filter-neighborh
 }
 $('export-btn').onclick=()=>{
   const picked=records.filter(p=>selected.has(p.key));if(picked.length<2)return;
-  const fields=['source','id','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','lat','lng','approx','advertiser'];
+  const fields=['source','id','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser'];
   const cells=fields.join(';')+'\r\n'+picked.map(p=>fields.map(k=>'"'+String(p[k]??'').replace(/"/g,'""')+'"').join(';')).join('\r\n');
   const object=URL.createObjectURL(new Blob(['\ufeff'+cells],{type:'text/csv;charset=utf-8'}));
   const a=document.createElement('a');a.href=object;a.download='comparaveis-imovel-busca.csv';a.click();setTimeout(()=>URL.revokeObjectURL(object),1200);
