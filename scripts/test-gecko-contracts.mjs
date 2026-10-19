@@ -108,7 +108,24 @@ test('OLX URL de origem: reconhecer pesquisa local com segmentos corretos',()=>{
  assert.equal(ok.url,url);
  const wrong=auditOlxRequestUrl({requestUrl:'https://www.olx.com.br/imoveis/estado-sp/sorocaba?q=casa'},p);
  assert.equal(wrong.status,'mismatch');
- assert.deepEqual(wrong.missingSegments,['regiao-de-sorocaba','salto-de-pirapora']);
+ assert.deepEqual(wrong.missingSegments,['venda','casas','regiao-de-sorocaba','salto-de-pirapora']);
  const missing=auditOlxRequestUrl({},p);
  assert.equal(missing.status,'unknown');
+});
+
+test('Auditoria: endereço vazio não oculta localização alternativa e stateCode',()=>{
+ const r=auditLocation({items:[
+  {id:'ok',address:{},location:{city:'Salto de Pirapora',stateCode:'SP'}},
+  {id:'fora',address:{},location:{city:'Sorocaba',state:'SP'}},
+  {id:'sem',address:{},location:{state:'SP'}}
+ ]},city,state);
+ assert.deepEqual(r.items.map(x=>x.id),['ok']);
+ assert.equal(r.audit.discardedOtherCities,1);
+ assert.equal(r.audit.discardedMissingLocation,1);
+});
+test('OLX: URL municipal sem categoria solicitada não comprova filtro',()=>{
+ const p=buildGeckoPayload({target:'olx.com.br',type:'plp',city,state,propertyType:'house'});
+ const r=auditOlxRequestUrl({requestUrl:'https://www.olx.com.br/imoveis/estado-sp/regiao-de-sorocaba/salto-de-pirapora'},p);
+ assert.equal(r.status,'mismatch');
+ assert.deepEqual(r.missingSegments,['venda','casas']);
 });
