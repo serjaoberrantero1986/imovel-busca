@@ -73,3 +73,20 @@ test('Imovelweb PDP: data dentro de envelope, com campos reais do portal',()=>{
   assert.equal(x.items[0].price,450000);assert.equal(x.items[0].type,'apartment');
   assert.equal(x.items[0].beds,3);
 });
+
+test('VivaReal: anúncio sem título usa tipologia e bairro sem inventar detalhes',()=>{
+ const x=ctx.payload({data:{source:'vivareal.com.br',items:[{
+  id:'2917562934',unitTypes:['HOME'],prices:[{businessType:'SALE',value:385000}],
+  attributes:{usableAreas:[120],totalAreas:[125],bedrooms:[3]},
+  address:{city:'Salto de Pirapora',stateAcronym:'SP',neighborhood:'São Lucas'}
+ }]}});
+ assert.equal(x.items[0].title,'Casa • São Lucas');
+ assert.equal(x.items[0].usable,120);
+ assert.equal(x.items[0].total,125);
+});
+test('Área construída não deve ser atribuída automaticamente à área útil',()=>{
+ const p=ctx.normalized({id:'sem-util',title:'Casa',builtArea:90,landArea:200,address:{city:'Salto de Pirapora',stateCode:'SP'}},'teste');
+ assert.equal(p.usable,null);
+ assert.equal(p.total,200);
+ assert.equal(p.state,'SP');
+});
