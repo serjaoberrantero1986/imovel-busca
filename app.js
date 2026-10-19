@@ -47,10 +47,10 @@ function normalized(item,source) {
   const type=classify(item);
   return {
     id,key:source+':'+id,source,type,
-    title:text(item.title||item.generatedTitle||item.name||item.metaTitle||'Imóvel sem título'),
+    title:text(item.title||item.generatedTitle||item.name||item.metaTitle||([typeLabel[type]||'Imóvel',address.neighborhood||item.neighborhood].filter(Boolean).join(' • '))),
     link:url(item.url||item.listingUrl),
     price:number(prices.mainValue??prices.value??prices.rawPrice??prices.price??item.askingPrice??item.price?.amount??item.price),
-    usable:take('usableAreas',area.useful??item.property?.usableArea??item.usableArea??item.builtArea??propValue(item,['area util','area privativa','area construida'])),
+    usable:take('usableAreas',area.useful??item.property?.usableArea??item.usableArea??propValue(item,['area util','area privativa'])),
     total:take('totalAreas',area.total??item.property?.totalArea??item.totalArea??item.landArea??propValue(item,['area total','terreno'])),
     beds:take('bedrooms',count('bedrooms',item.property?.bedrooms??item.bedrooms??propValue(item,['quartos','dormitorios']))),
     suites:take('suites',count('suites',item.property?.suites??item.suites??propValue(item,['suites']))),
@@ -58,7 +58,7 @@ function normalized(item,source) {
     spaces:take('parkingSpaces',count('garages',item.property?.parkingSpaces??item.parkingSpaces??propValue(item,['vagas','garagem']))),
     floors:take('floors',item.floors),
     neighborhood:text(address.neighborhood||item.neighborhood),
-    city:text(address.city||item.city),state:uf(address.stateAcronym||address.stateCode||address.state||item.state)||text(address.state||item.state),
+    city:text(address.city||item.city),state:uf(address.stateAcronym||address.stateCode||address.state||item.stateCode||item.state)||text(address.stateCode||address.state||item.stateCode||item.state),
     lat:valid?lat:null,lng:valid?lng:null,
     approx:address.isApproximateLocation===true||address.approximate===true||address.publicAddress===false,
     amenities:Array.isArray(item.amenities)?item.amenities:Array.isArray(item.privativeAmenities)?item.privativeAmenities:[],
