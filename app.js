@@ -653,16 +653,26 @@ function restoreBrowserReview(p){
     const e=readSavedReviews()[browserReviewKey(p)];
     if(!e||e.source!==p.source||String(e.id)!==String(p.id)||
       e.city!==p.city||uf(e.state)!==uf(p.state)||(e.link||'')!==(p.link||''))return p;
+    const entryHistory=validatedReviewEntries(e.reviewHistory);
+    const entryConfirmation=validateReviewConfirmation(e.reviewConfirmation);
+    // Uma marcação "visualizado" antiga não pode apagar uma conferência
+    // mais completa que veio no CSV reimportado.
+    if((p.reviewHistory?.length||p.reviewConfirmation)&&
+       !entryHistory.length&&!entryConfirmation)
+      return {...p,viewedAt:p.viewedAt||e.viewedAt||null};
     const out={...p,viewedAt:typeof e.viewedAt==='string'?e.viewedAt:null,
-      reviewHistory:validatedReviewEntries(e.reviewHistory),
-      reviewConfirmation:validateReviewConfirmation(e.reviewConfirmation),
+      reviewHistory:entryHistory,reviewConfirmation:entryConfirmation,
       reviewImported:Boolean(e.reviewImported),manualOverrides:{}};
     if(e.providerSnapshot&&typeof e.providerSnapshot==='object'){
       out.providerSnapshot=Object.fromEntries(Object.keys(REVIEW_FIELDS).map(field=>
         [field,reviewFieldNumber(e.providerSnapshot[field],field)]));
       for(const field of Object.keys(REVIEW_FIELDS)){
         if(e.manualOverrides?.[field]===true){
-          out[field]=reviewFieldNumber(e.values?.[field],field);
+          const locallyReviewed=reviewFieldNumber(e.values?.[field],field);
+          if(p[field]!==null&&p[field]!==undefined&&p[field]!==locallyReviewed)
+            out.providerConflicts={...(out.providerConflicts||{}),
+              [field]:{providerValue:p[field],reviewedValue:locallyReviewed}};
+          out[field]=locallyReviewed;
           out.manualOverrides[field]=true;
         }
       }
@@ -1301,6 +1311,14 @@ function loadNormalized(items,total=null,detailed=false){
           }
           continue;
         }
+        if(prior.reviewConfirmation&&Object.hasOwn(REVIEW_FIELDS,key)&&
+           val!==prior[key]){
+          // Uma revisão sem alteração não autentica novos números que o
+          // portal venha a informar em consultas futuras.
+          update.reviewConfirmation=null;
+          update.providerConflicts={...(update.providerConflicts||{}),
+            [key]:{providerValue:val,reviewedValue:prior[key]}};
+        }
         // Histórico local não é substituído por metadados da nova consulta.
         if(['reviewHistory','reviewConfirmation','viewedAt','manualOverrides','providerSnapshot','reviewImported','providerConflicts'].includes(key))
           continue;
@@ -1865,6 +1883,12 @@ async function fetchDetails(p,button){
           merged.providerConflicts={...(merged.providerConflicts||{}),
             [key]:{providerValue:val,reviewedValue:current[key]}};
         continue;
+      }
+      if(current.reviewConfirmation&&Object.hasOwn(REVIEW_FIELDS,key)&&
+         val!==current[key]){
+        merged.reviewConfirmation=null;
+        merged.providerConflicts={...(merged.providerConflicts||{}),
+          [key]:{providerValue:val,reviewedValue:current[key]}};
       }
       merged[key]=val;
     }
