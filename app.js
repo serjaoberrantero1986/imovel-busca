@@ -54,7 +54,13 @@ function classify(item) {
   }
   return identify(canon([item.category,item.title].filter(Boolean).join(' ')));
 }
-const typeLabel={house:'Casa',apartment:'Apartamento',land:'Terreno',farm:'Chácara/sítio',penthouse:'Cobertura',warehouse:'Galpão',commercial_room:'Sala comercial',unknown:'A classificar'};
+const typeLabel={
+  house:'Casa',two_story_house:'Sobrado',condominium:'Imóvel em condomínio',
+  apartment:'Apartamento',flat:'Flat',kitnet:'Kitnet / studio',
+  land:'Terreno / lote',farm:'Chácara / sítio / fazenda',penthouse:'Cobertura',
+  warehouse:'Galpão',commercial_room:'Sala comercial',commercial_point:'Ponto comercial',
+  other:'Outro (descrição livre)',unknown:'A classificar'
+};
 function bestTitle(item,type,address) {
   const provided=[item.title,item.generatedTitle,item.name,item.metaTitle].find(v=>
     typeof v==='string'&&v.trim()&&canon(v)!=='imovel sem titulo');
@@ -165,6 +171,179 @@ function duplicate(p) {
     return priceDiff<=0.02&&areaDiff<=0.03;
   });
 }
+
+// Cadastro de imóvel de referência independente de consultas à GeckoAPI.
+// As faixas de aproximação são regras de triagem, NÃO coeficientes de avaliação.
+let referenceProfile=null,referenceMarker=null;
+const referenceTypeFamilies={
+  house:'house',two_story_house:'house',condominium:'condominium',
+  apartment:'apartment',flat:'apartment',kitnet:'apartment',
+  land:'land',farm:'farm',penthouse:'penthouse',
+  warehouse:'warehouse',commercial_room:'commercial_room',
+  commercial_point:'commercial_point',other:'other'
+};
+const referenceLabels={
+  compatible:'Aderente nos critérios conferidos',
+  review:'Revisar diferenças',
+  insufficient:'Comparação incompleta',
+  incompatible:'Fora do recorte'
+};
+const referenceOrder={compatible:0,review:1,insufficient:2,incompatible:3};
+function optionalReferenceNumber(raw,field,{zero=false,integer=false,max=1000000000000}={}){
+  if(raw===null||raw===undefined||String(raw).trim()==='')return null;
+  const str=String(raw).trim().replace(',','.');
+  const value=Number(str);
+  if(!Number.isFinite(value)||(zero?value<0:value<=0)||value>max||(integer&&!Number.isInteger(value)))
+    throw Error(field+': informe um número válido'+(zero?' (zero permitido)':' maior que zero')+'.');
+  return value;
+}
+function makeReference(input){
+  if(!input||!Object.hasOwn(referenceTypeFamilies,input.type))throw Error('Selecione a tipologia do imóvel de referência.');
+  const city=String(input.city??'').trim().slice(0,100);
+  const state=uf(input.state);
+  if(city.length<2||!state)throw Error('Informe município e UF brasileiros válidos para o imóvel de referência.');
+  const custom=String(input.customType??'').trim().slice(0,100);
+  if(input.type==='other'&&custom.length<3)throw Error('Descreva a tipologia personalizada do imóvel.');
+  const coords=[input.lat,input.lng].map(v=>v===undefined||v===null||String(v).trim()===''?null:Number(String(v).trim().replace(',','.')));
+  if((coords[0]===null)!==(coords[1]===null))
+    throw Error('Informe latitude e longitude juntas ou deixe ambas vazias.');
+  if(coords[0]!==null&&(!Number.isFinite(coords[0])||!Number.isFinite(coords[1])||Math.abs(coords[0])>90||Math.abs(coords[1])>180||(coords[0]===0&&coords[1]===0)))
+    throw Error('As coordenadas do imóvel de referência são inválidas.');
+  const tolerance=optionalReferenceNumber(input.tolerance??20,'Tolerância de área',{max:50});
+  if(tolerance<5||tolerance>50)throw Error('A tolerância de área deve ser entre 5% e 50%.');
+  const radius=optionalReferenceNumber(input.radius,'Raio máximo',{max:1000});
+  if(radius!==null&&coords[0]===null)throw Error('Informe coordenadas conhecidas para utilizar o raio geográfico.');
+  return {
+    name:String(input.name??'').trim().slice(0,120)||'Imóvel de referência',
+    type:input.type,customType:custom,city,state,
+    neighborhood:String(input.neighborhood??'').trim().slice(0,120),
+    usable:optionalReferenceNumber(input.usable,'Área útil',{max:1000000000}),
+    built:optionalReferenceNumber(input.built,'Área construída',{max:1000000000}),
+    total:optionalReferenceNumber(input.total,'Área total / terreno'),
+    beds:optionalReferenceNumber(input.beds,'Dormitórios',{zero:true,integer:true,max:100}),
+    suites:optionalReferenceNumber(input.suites,'Suítes',{zero:true,integer:true,max:100}),
+    baths:optionalReferenceNumber(input.baths,'Banheiros',{zero:true,integer:true,max:100}),
+    spaces:optionalReferenceNumber(input.spaces,'Vagas',{zero:true,integer:true,max:1000}),
+    lat:coords[0],lng:coords[1],radiusKm:radius,tolerance
+  };
+}
+function assessReference(reference,p){
+  if(!reference)return null;
+  const missing=[],warnings=[],incompatible=[],positive=[];
+  const expected=reference.type,actual=p.type;
+  if(expected==='other'){
+    missing.push('Tipologia personalizada: confirmar compatibilidade manualmente.');
+  }else if(actual==='unknown'||!actual){
+    missing.push('Tipologia do anúncio não identificada.');
+  }else if(expected!==actual){
+    const sameFamily=referenceTypeFamilies[expected]===referenceTypeFamilies[actual];
+    const condominiumNeedsReview=expected==='condominium'&&['house','apartment','two_story_house','flat','kitnet'].includes(actual);
+    if(sameFamily||condominiumNeedsReview)
+      warnings.push('Subtipo de imóvel diferente; confirmar se é equivalente.');
+    else incompatible.push('Tipologia diferente do imóvel de referência.');
+  }else positive.push('Tipologia correspondente');
+
+  if(!p.city||p.city==='—'||!uf(p.state))missing.push('Município ou UF do anúncio não confirmados.');
+  else if(canon(p.city)!==canon(reference.city)||uf(p.state)!==reference.state)
+    incompatible.push('Anúncio em município ou UF diferente.');
+  else positive.push('Município e UF correspondentes');
+
+  const useLand=['land','farm'].includes(expected);
+  const key=useLand?'total':'usable';
+  const label=useLand?'área do terreno':'área útil';
+  const intended=reference[key],actualArea=p[key];
+  let areaDeviation=null;
+  if(intended===null||intended===undefined)
+    missing.push('Informe a '+label+' do imóvel de referência para comparar metragens.');
+  else if(actualArea===null||!Number.isFinite(actualArea)||actualArea<=0)
+    missing.push('Anúncio sem '+label+' verificável.');
+  else {
+    areaDeviation=100*Math.abs(actualArea-intended)/intended;
+    if(areaDeviation<=reference.tolerance)positive.push('Metragem dentro da faixa configurada');
+    else warnings.push('Diferença de '+Math.round(areaDeviation)+'% na '+label+' (faixa escolhida: ±'+reference.tolerance+'%).');
+  }
+  if(reference.built!==null&&reference.built!==undefined&&p.built!==null&&p.built!==undefined&&Number.isFinite(p.built)){
+    const dev=100*Math.abs(p.built-reference.built)/reference.built;
+    if(dev>reference.tolerance)warnings.push('Área construída diferente da referência.');
+  }
+  if(reference.neighborhood){
+    if(!p.neighborhood||p.neighborhood==='—')warnings.push('Bairro do anúncio não informado.');
+    else if(canon(p.neighborhood)!==canon(reference.neighborhood))
+      warnings.push('Bairro diferente do imóvel de referência.');
+    else positive.push('Mesmo bairro');
+  }
+  for(const [key,label] of [['beds','dormitórios'],['suites','suítes'],['baths','banheiros'],['spaces','vagas']]){
+    if(reference[key]===null)continue;
+    if(p[key]===null||!Number.isFinite(p[key]))warnings.push('Anúncio sem informação de '+label+'.');
+    else if(p[key]!==reference[key])warnings.push('Quantidade de '+label+' diferente ('+p[key]+' vs. '+reference[key]+').');
+    else positive.push('Quantidade de '+label+' correspondente');
+  }
+  let distanceKm=null;
+  if(reference.radiusKm!==null){
+    if(!validPoint(p))missing.push('Anúncio sem coordenadas para verificar o raio geográfico.');
+    else {
+      distanceKm=distance(reference,p);
+      if(distanceKm>reference.radiusKm)
+        warnings.push('Fora do raio escolhido ('+distanceKm.toFixed(1)+' km; máximo '+reference.radiusKm+' km).');
+      else positive.push('Dentro do raio geográfico informado');
+      if(p.approx)warnings.push('Coordenadas aproximadas: distância não certificada.');
+    }
+  }else if(reference.lat!==null&&validPoint(p)){
+    distanceKm=distance(reference,p);
+  }
+  const status=incompatible.length?'incompatible':missing.length?'insufficient':warnings.length?'review':'compatible';
+  return {status,issues:[...incompatible,...missing,...warnings],positive,areaDeviation,distanceKm};
+}
+function referenceTitle(reference){
+  return reference.type==='other'?reference.customType:typeLabel[reference.type];
+}
+function readReferenceFields(){
+  const keys={name:'ref-name',type:'ref-type',customType:'ref-custom-type',
+    city:'ref-city',state:'ref-state',neighborhood:'ref-neighborhood',
+    usable:'ref-usable',built:'ref-built',total:'ref-total',
+    beds:'ref-beds',suites:'ref-suites',baths:'ref-baths',spaces:'ref-spaces',
+    lat:'ref-lat',lng:'ref-lng',radius:'ref-radius',tolerance:'ref-tolerance'};
+  return Object.fromEntries(Object.entries(keys).map(([key,id])=>[key,$(id).value]));
+}
+function syncReferenceFields(){
+  const type=$('ref-type').value;
+  $('ref-custom-wrap').classList.toggle('hidden',type!=='other');
+  const primaryArea=['land','farm'].includes(type)?'área total do terreno':'área útil';
+  $('ref-area-hint').textContent='Para '+(typeLabel[type]||'o tipo selecionado')+
+    ', a referência utiliza '+primaryArea+'. Área construída não substitui área útil; campos faltantes ficam sinalizados.';
+}
+function showReference(){
+  const summary=$('ref-summary'),filter=$('reference-filter'),sort=$('reference-sort');
+  filter.disabled=!referenceProfile;sort.disabled=!referenceProfile;
+  if(!referenceProfile){
+    filter.value='';sort.value='';
+    summary.textContent='Nenhum imóvel de referência cadastrado. Os anúncios continuam disponíveis sem pontuação ou exclusão automática.';
+    $('reference-stats').textContent='Cadastre a referência para comparar cada anúncio ao seu recorte.';
+    return;
+  }
+  const r=referenceProfile;
+  summary.textContent=r.name+' · '+referenceTitle(r)+' · '+r.city+'/'+r.state+
+    (r.neighborhood?' · '+r.neighborhood:'')+
+    ' · '+(r.type==='land'||r.type==='farm'?'Terreno: '+(r.total??'não informado'):'Área útil: '+(r.usable??'não informada'))+' m²'+
+    ' · tolerância: ±'+r.tolerance+'%.';
+}
+$('reference-save').onclick=()=>{
+  try{
+    referenceProfile=makeReference(readReferenceFields());
+    showReference();
+    drawMap(false);refresh();
+    report('Imóvel de referência atualizado. A compatibilidade é uma triagem de características, não uma avaliação de mercado.');
+  }catch(e){report(e.message||'Dados inválidos do imóvel de referência.',true);}
+};
+$('reference-clear').onclick=()=>{
+  referenceProfile=null;
+  showReference();drawMap(false);refresh();
+  report('Imóvel de referência removido. Anúncios e seleção foram preservados.');
+};
+$('ref-type').addEventListener('change',syncReferenceFields);
+syncReferenceFields();
+showReference();
+
 const valueOf = id => {const v=$(id).value.trim();return v===''?null:Number(v);};
 function visibleRecords(){
   const minBeds=Number($('min-beds').value)||0;
