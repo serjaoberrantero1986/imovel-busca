@@ -11,18 +11,55 @@ let activeLocation = null;
 function canon(value){return String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
 function classify(item) {
   const units=(Array.isArray(item.unitTypes)?item.unitTypes:[]).map(canon);
-  const raw=canon([item.realtyType?.name,item.property?.type,item.category,item.propertyType,item.typeLabel,item.title].filter(Boolean).join(' '));
   const match=words=>units.some(u=>words.some(w=>u.includes(w)));
-  if(match(['allotment','land','lot'])||/\b(terreno|terrenos|lote|lotes)\b/.test(raw))return 'land';
-  if(match(['farm','rural'])||/\b(chacara|chacaras|sitio|sitios|fazenda|fazendas)\b/.test(raw))return 'farm';
-  if(match(['penthouse'])||/\b(cobertura|coberturas)\b/.test(raw))return 'penthouse';
-  if(match(['warehouse'])||/\b(galpao|galpoes)\b/.test(raw))return 'warehouse';
-  if(match(['commercial_room'])||/\b(sala comercial|salas comerciais)\b/.test(raw))return 'commercial_room';
-  if(match(['apartment','flat','kitnet'])||/\b(apartamento|apartamentos|studio|kitnet)\b/.test(raw))return 'apartment';
-  if(match(['home','house'])||/\b(casa|casas|sobrado|sobrados)\b/.test(raw))return 'house';
-  return 'unknown';
+  // Tipos estruturados têm prioridade sobre títulos que possam mencionar bairros
+  // com palavras como "Chácaras" ou "Jardim dos Terrenos".
+  if(match(['allotment','land','lot']))return 'land';
+  if(match(['farm','rural']))return 'farm';
+  if(match(['penthouse']))return 'penthouse';
+  if(match(['warehouse']))return 'warehouse';
+  if(match(['commercial_room']))return 'commercial_room';
+  if(match(['apartment','flat','kitnet']))return 'apartment';
+  if(match(['home','house']))return 'house';
+  const identify=raw=>{
+    if(!raw)return 'unknown';
+    if(/^(casa|casas|sobrado|sobrados)\b/.test(raw))return 'house';
+    if(/^(apartamento|apartamentos|studio|kitnet|flat)\b/.test(raw))return 'apartment';
+    if(/^(terreno|terrenos|lote|lotes)\b/.test(raw))return 'land';
+    if(/^(chacara|chacaras|sitio|sitios|fazenda|fazendas)\b/.test(raw))return 'farm';
+    if(/^(cobertura|coberturas)\b/.test(raw))return 'penthouse';
+    if(/\b(terreno|terrenos|lote|lotes)\b/.test(raw))return 'land';
+    if(/\b(chacara|chacaras|sitio|sitios|fazenda|fazendas)\b/.test(raw))return 'farm';
+    if(/\b(cobertura|coberturas)\b/.test(raw))return 'penthouse';
+    if(/\b(galpao|galpoes)\b/.test(raw))return 'warehouse';
+    if(/\b(sala comercial|salas comerciais)\b/.test(raw))return 'commercial_room';
+    if(/\b(apartamento|apartamentos|studio|kitnet)\b/.test(raw))return 'apartment';
+    if(/\b(casa|casas|sobrado|sobrados)\b/.test(raw))return 'house';
+    return 'unknown';
+  };
+  const structured=identify(canon([item.realtyType?.name,item.property?.type,item.propertyType,item.typeLabel].filter(Boolean).join(' ')));
+  if(structured!=='unknown')return structured;
+  // O CSV exportado não tinha coluna de tipo. Quando o próprio link VivaReal
+  // informa explicitamente a tipologia, aproveitamos somente esse prefixo.
+  const link=url(item.url||item.link||item.listingUrl);
+  if(link) {
+    const parsed=new URL(link);
+    if(/(^|\.)vivareal\.com\.br$/.test(parsed.hostname)) {
+      const slug=parsed.pathname.match(/\/imovel\/(casa|sobrado|apartamento|terreno|lote|chacara|sitio|cobertura|galpao|kitnet|flat)(?:-|\/|$)/i)?.[1];
+      if(slug) {
+        const fromLink=identify(canon(slug));
+        if(fromLink!=='unknown')return fromLink;
+      }
+    }
+  }
+  return identify(canon([item.category,item.title].filter(Boolean).join(' ')));
 }
 const typeLabel={house:'Casa',apartment:'Apartamento',land:'Terreno',farm:'Chácara/sítio',penthouse:'Cobertura',warehouse:'Galpão',commercial_room:'Sala comercial',unknown:'A classificar'};
+function bestTitle(item,type,address) {
+  const provided=[item.title,item.generatedTitle,item.name,item.metaTitle].find(v=>
+    typeof v==='string'&&v.trim()&&canon(v)!=='imovel sem titulo');
+  return provided?.trim()||[typeLabel[type]||'Imóvel',address.neighborhood||item.neighborhood].filter(Boolean).join(' • ');
+}
 function propValue(item,keys) {
   const all=[...(Array.isArray(item.properties)?item.properties:[]),...(Array.isArray(item.attributes)?item.attributes:[])];
   const matched=all.find(p=>keys.some(t=>canon([p.name,p.label].join(' ')).includes(canon(t))));
@@ -47,7 +84,7 @@ function normalized(item,source) {
   const type=classify(item);
   return {
     id,key:source+':'+id,source,type,
-    title:text(item.title||item.generatedTitle||item.name||item.metaTitle||([typeLabel[type]||'Imóvel',address.neighborhood||item.neighborhood].filter(Boolean).join(' • '))),
+    title:bestTitle(item,type,address),
     link:url(item.url||item.listingUrl),
     price:number(prices.mainValue??prices.value??prices.rawPrice??prices.price??item.askingPrice??item.price?.amount??item.price),
     usable:take('usableAreas',area.useful??item.property?.usableArea??item.usableArea??propValue(item,['area util','area privativa'])),
