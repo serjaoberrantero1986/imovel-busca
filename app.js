@@ -575,7 +575,8 @@ function reviewState(p){
   if(p.reviewImported&&(p.reviewHistory?.length||p.reviewConfirmation))return 'imported';
   if(p.reviewConfirmation)
     return Object.keys(p.manualOverrides||{}).some(f=>p.manualOverrides[f])?'edited':'confirmed';
-  if(p.reviewHistory?.some(x=>x.source!=='restore'))return 'edited';
+  // O histórico pode conter uma restauração: correções antigas não tornam
+  // o valor atual "corrigido" depois que tudo voltou ao original.
   return p.viewedAt?'viewed':'unread';
 }
 function reviewBadge(p){
@@ -671,6 +672,20 @@ function restoreBrowserReview(p){
 }
 
 let activeReviewKey=null;
+let reviewReturnSource='eligibility';
+function showReviewError(message){
+  const box=$('review-action-error');
+  box.textContent=message;
+  box.classList.toggle('hidden',!message);
+}
+function showSavedReviewNotice(message,origin='eligibility'){
+  const toast=$('review-saved');
+  toast.textContent=message;
+  toast.classList.remove('hidden');
+  const section=origin==='cards'?'results':'eligibility-panel';
+  $(section)?.scrollIntoView?.({behavior:'smooth',block:'start'});
+}
+
 function reviewFieldNumber(raw,field){
   const v=REVIEW_FIELDS[field];
   if(!v)throw Error('Campo de conferência não permitido.');
@@ -762,10 +777,15 @@ function parseImportedHistory(raw){
 function reviewTarget(){
   return records.find(x=>x.key===activeReviewKey)||null;
 }
-function openReview(key){
+function openReview(key,origin='eligibility'){
   const p=records.find(x=>x.key===key);
   if(!p){report('Este anúncio não está mais na sessão.',true);return;}
   activeReviewKey=p.key;
+  reviewReturnSource=origin;
+  if(!p.viewedAt){p.viewedAt=new Date().toISOString();saveBrowserReview(p);}
+  $('review-saved').classList.add('hidden');
+  showReviewError('');
+  refresh();
   const panel=$('review-panel');
   panel.classList.remove('hidden');
   $('review-target').textContent=p.title+' · '+p.source+' · '+p.city+'/'+p.state;
@@ -795,15 +815,32 @@ function closeReview(){
 $('review-close').onclick=closeReview;
 $('review-save').onclick=()=>{
   try{
+    showReviewError('');
     const prior=reviewTarget();
     if(!prior)throw Error('Escolha um anúncio para conferir.');
     const input=Object.fromEntries(Object.keys(REVIEW_FIELDS).map(f=>[f,$('review-'+f).value]));
     const corrected=applyReviewChanges(prior,input,$('review-source').value,$('review-note').value);
     const index=records.findIndex(x=>x.key===prior.key);
+    if(index<0)throw Error('O anúncio não foi encontrado na sessão.');
     records[index]=corrected;
-    refresh();openReview(corrected.key);
-    report('Correção registrada com origem, justificativa e valores anteriores. A triagem e o indicativo foram recalculados.');
-  }catch(error){report(error.message,true);}
+    const saved=saveBrowserReview(corrected);
+    const status=reviewState(corrected);
+    const origin=reviewReturnSource;
+    closeReview();
+    refresh();
+    showSavedReviewNotice(
+      (status==='edited'?'✓ Dados corrigidos e conferência registrada: ':'✓ Anúncio conferido sem alterações: ')+
+      corrected.title+'. A triagem e o indicativo foram recalculados. '+
+      (saved?'Revisão guardada neste navegador.':'Atenção: o navegador não permitiu guardar a revisão; exporte o CSV antes de sair.'),
+      origin
+    );
+    report('Conferência salva. O anúncio foi marcado na lista; dados revisados continuam sujeitos à validação profissional.');
+  }catch(error){
+    const message=error?.message||'Não foi possível salvar a conferência.';
+    showReviewError(message);
+    $('review-action-error')?.scrollIntoView?.({behavior:'smooth',block:'center'});
+    report(message,true);
+  }
 };
 $('review-reset').onclick=()=>{
   try{
@@ -811,9 +848,15 @@ $('review-reset').onclick=()=>{
     if(!prior?.providerSnapshot)throw Error('Este anúncio ainda não possui correções locais para restaurar.');
     if(window.confirm?.('Restaurar os valores originais deste anúncio e registrar a restauração?')===false)return;
     const index=records.findIndex(x=>x.key===prior.key);
-    records[index]=restoreProviderFields(prior);
-    refresh();openReview(prior.key);
-    report('Os valores originais capturados na primeira conferência foram restaurados e a ação foi registrada.');
+    const original=restoreProviderFields(prior);
+    records[index]=original;
+    const saved=saveBrowserReview(original);
+    const origin=reviewReturnSource;
+    closeReview();
+    refresh();
+    showSavedReviewNotice('Valores originais restaurados: '+original.title+
+      '. A restauração foi registrada.'+(saved?'':' Não foi possível guardar no navegador; exporte CSV.'),origin);
+    report('Restauração concluída. Indicativo atualizado.');
   }catch(error){report(error.message,true);}
 };
 
