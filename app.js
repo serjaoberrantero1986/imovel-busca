@@ -477,25 +477,37 @@ function computeOfferIndicator(reference,chosen){
   if(!Number.isFinite(area)||area<=0)
     return {...base,areaLabel,reasons:['Informe a '+areaLabel+' do imóvel de referência para obter o valor preliminar.']};
   const result={...base,area,areaLabel,reasons:[]};
-  if(list.length<2){
-    result.reasons.push('Selecione pelo menos dois anúncios para calcular o indicativo.');
-    return result;
-  }
+  // Triar até um único anúncio: mesmo sem estimativa numérica, o usuário precisa
+  // enxergar se cada oferta é aproveitável, incompatível ou exige confirmação.
   for(const item of list){
     const p=item||{},label=p.title||p.id||'Anúncio sem título';
-    const issue=(reason)=>result.excluded.push({key:p.key||null,label,reason});
+    const issue=(reason,classification='excluded')=>
+      result.excluded.push({key:p.key||null,label,reason,classification,item:p});
     const purpose=inferOfferPurpose(p);
     if(purpose==='rent'){issue('Anúncio de locação: não pode compor indicativo de venda.');continue;}
     const review=assessReference(reference,p);
     if(review.status==='incompatible'){issue('Tipologia ou município incompatível.');continue;}
-    if(review.status==='insufficient'){issue('Dados essenciais ausentes: '+(review.issues[0]||'verifique os atributos')+'.');continue;}
-    if(p.type!==reference.type){issue('Subtipos diferentes precisam de conferência antes do cálculo.');continue;}
+    if(review.status==='insufficient'){
+      const foundArea=(p.textEvidence||[]).filter(x=>x.field==='area');
+      issue('Dados essenciais ausentes: '+review.issues.join(' · ')+
+        (foundArea.length?' · O texto menciona '+foundArea.map(x=>x.label).join(', ')+
+         ', mas o tipo da área precisa ser confirmado.':''), 'pending');
+      continue;
+    }
+    if(p.type!==reference.type){issue('Subtipos diferentes precisam de conferência antes do cálculo.','pending');continue;}
     const pArea=p[areaKey];
     if(!Number.isFinite(p.price)||p.price<=0||!Number.isFinite(pArea)||pArea<=0){
-      issue('Preço pedido ou área do anúncio inválidos.');continue;
+      issue('Preço pedido ou área do anúncio inválidos.','pending');continue;
     }
     if(review.areaDeviation===null||review.areaDeviation>reference.tolerance){
       issue('Metragem fora da tolerância ±'+reference.tolerance+'% definida para o imóvel.');continue;
+    }
+    // Divergências graves de área que podem indicar erro de mapeamento precisam
+    // de revisão. Não decidir arbitrariamente qual metragem está correta.
+    if(p.usable!==null&&p.total!==null&&Number.isFinite(p.usable)&&Number.isFinite(p.total)&&
+       p.total>0&&p.usable>p.total){
+      issue('Área útil maior que a área total reportada; confirmar definições/valor de origem antes do cálculo.','pending');
+      continue;
     }
     if(result.included.some(other=>indicatorSimilarListing(p,other.item))){
       issue('Mesmo anúncio encontrado mais de uma vez.');continue;
@@ -503,14 +515,14 @@ function computeOfferIndicator(reference,chosen){
     const likelyRepeated=result.included.find(other=>suspectedCrossPortalRepeat(p,other.item));
     if(likelyRepeated){
       result.suspectedDuplicates.push({key:p.key,otherKey:likelyRepeated.key});
-      issue('Possível duplicidade com outra fonte ('+likelyRepeated.item.source+'). Excluído preventivamente do indicativo até conferência manual.');continue;
+      issue('Possível duplicidade com outra fonte ('+likelyRepeated.item.source+'). Excluído preventivamente do indicativo até conferência manual.','pending');continue;
     }
     result.included.push({item:p,key:p.key||null,label,area:pArea,ask:p.price,
       unit:p.price/pArea,normalized:(p.price/pArea)*area,
       warnings:review.issues.slice(0,5)});
   }
   if(result.included.length<2){
-    result.reasons.push('Apenas '+result.included.length+' anúncio(s) da seleção passaram pelos requisitos. É necessário ter ao menos dois para mostrar um indicativo.');
+    result.reasons.push('Apenas '+result.included.length+' anúncio(s) da amostra passaram pelos requisitos. É necessário ter ao menos dois para mostrar um indicativo.');
     return result;
   }
   const units=result.included.map(x=>x.unit).sort((a,b)=>a-b);
@@ -535,16 +547,71 @@ function computeOfferIndicator(reference,chosen){
   result.reasons.push('Preços pedidos não equivalem a valores efetivos de transação.');
   return result;
 }
+
+let eligibilityLimit=25;
+const eligibilityNames={included:'Aproveitado',pending:'Conferência necessária',excluded:'Excluído pelo critério'};
+function summarizeEligibility(stats,chosen){
+  const rows=[
+    ...stats.included.map(x=>({key:x.key,item:x.item,label:x.label,
+      classification:'included',reason:'Passou pelo tipo, município, preço e metragem verificados.'+
+      (x.warnings?.length?' Diferenças sem ajuste: '+x.warnings.slice(0,2).join(' · '):'')})),
+    ...stats.excluded.map(x=>({...x,classification:x.classification||'excluded'}))
+  ];
+  const completed=new Set(rows.map(x=>x.key));
+  for(const p of chosen){
+    if(!completed.has(p.key))
+      rows.push({key:p.key,item:p,label:p.title||p.id||'Anúncio',
+        classification:'pending',reason:'Cadastre a referência completa para iniciar a triagem.'});
+  }
+  const counts={included:0,pending:0,excluded:0};
+  for(const r of rows)counts[r.classification]++;
+  return {rows,counts,total:chosen.length};
+}
+function renderEligibility(stats,chosen){
+  const summary=$('eligibility-summary'),overview=$('eligibility-overview'),list=$('eligibility-list');
+  if(!overview||!list)return;
+  const {rows,counts,total}=summarizeEligibility(stats,chosen);
+  summary.textContent=total+' anúncio(s) na triagem automática';
+  overview.innerHTML=[
+    ['included','Usados no indicativo'],
+    ['pending','Para confirmar dados'],
+    ['excluded','Fora do cálculo']
+  ].map(([key,label])=>'<div class="eligibility-metric '+key+'"><strong>'+counts[key]+'</strong><small>'+label+'</small></div>').join('');
+  const filter=$('eligibility-filter').value||'all';
+  const filtered=filter==='all'?rows:rows.filter(r=>r.classification===filter);
+  const batch=filtered.slice(0,eligibilityLimit);
+  $('eligibility-visible-count').textContent='Mostrando '+batch.length+' de '+filtered.length+' anúncio(s)';
+  list.innerHTML=batch.length?batch.map(row=>{
+    const link=url(row.item?.link);
+    const title='<strong>'+safe(row.label)+'</strong>';
+    return '<div class="eligibility-line"><div>'+title+
+      '<p>'+safe(row.item?.source||'Origem não informada')+
+      (Number.isFinite(row.item?.price)?' · '+safe(money(row.item.price)):'')+
+      '</p></div><span class="status '+row.classification+'">'+eligibilityNames[row.classification]+'</span>'+
+      '<div class="reason"><strong>Motivo:</strong> '+safe(row.reason)+
+      (link?' · <a class="link" href="'+safe(link)+'" target="_blank" rel="noopener noreferrer">Ver anúncio original ↗</a>':'')+
+      '</div></div>';
+  }).join(''):'<p class="hint">Nenhum anúncio nesta categoria.</p>';
+  const more=$('eligibility-more');
+  more.classList.toggle('hidden',filtered.length<=eligibilityLimit);
+}
+$('eligibility-filter').addEventListener('change',()=>{
+  eligibilityLimit=25;renderOfferIndicator();
+});
+$('eligibility-more').onclick=()=>{
+  eligibilityLimit+=25;renderOfferIndicator();
+};
+
 function renderOfferIndicator(){
   const host=$('offer-indicator');
   if(!host)return;
   const chosen=records.filter(p=>selected.has(p.key));
   const stats=computeOfferIndicator(referenceProfile,chosen);
+  renderEligibility(stats,chosen);
   if(stats.status!=='ready'){
     host.innerHTML='<div class="offer-empty"><div class="offer-kicker">Indicativo preliminar na tela</div>'+
       '<h3>Aguardando dados para estimar</h3><p>'+safe(stats.reasons.join(' '))+'</p>'+
-      (stats.excluded.length?'<details class="offer-details"><summary>Por que alguns anúncios não entraram no cálculo ('+
-        stats.excluded.length+')</summary><ul>'+stats.excluded.map(x=>'<li>'+safe(x.label)+' — '+safe(x.reason)+'</li>').join('')+'</ul></details>':'')+
+      (stats.excluded.length?'<p class="offer-note">Veja a lista completa de exclusões e pendências na seção Limpeza automática acima.</p>':'')+
       '<p class="offer-note">Não é necessário exportar CSV para obter um resultado.</p></div>';
     return;
   }
@@ -568,8 +635,8 @@ function renderOfferIndicator(){
       stats.included.map(x=>'<tr><td>'+safe(x.label)+'</td><td>'+safe(money(x.ask))+'</td>'+
         '<td>'+safe(x.area)+' m²</td><td>'+safe(money(x.unit))+'</td><td>'+safe(approx(x.normalized))+'</td></tr>').join('')+
       '</tbody></table></div>'+
-      (stats.excluded.length?'<p><strong>Fora do cálculo:</strong> '+
-         stats.excluded.map(x=>safe(x.label)+' — '+safe(x.reason)).join('; ')+'</p>':'')+
+      (stats.excluded.length?'<p><strong>Fora do cálculo:</strong> '+stats.excluded.length+
+        ' anúncios. Consulte os motivos individualmente na seção Limpeza automática acima.</p>':'')+
     '</details>'+
     '<p class="offer-disclaimer">Isto é um <strong>indicador de ofertas comparáveis</strong>, não um valor de avaliação tecnicamente validado, laudo ou PTAM. O preço pode mudar após verificar características, transações e metodologia.</p>';
 }
