@@ -372,3 +372,19 @@ test('Resumo guiado: exibe motivos reais de anúncios selecionados sem gerar val
  ctx.selected.clear();ctx.records.length=0;
  el('reference-clear').onclick();
 });
+
+test('Interface simplificada: referência, arquivo e resultado seguem três passos claros',()=>{
+ const html=readFileSync(new URL('../index.html',import.meta.url),'utf8');
+ const pos=['id="reference-panel"','id="csv-file"','id="guided-summary"','id="results"'].map(value=>html.indexOf(value));
+ assert.ok(pos.every(value=>value>=0), 'Todos os controles do fluxo devem existir');
+ assert.ok(pos.every((value,i)=>i===0||value>pos[i-1]),'A referência precede a importação e o resultado');
+ for(const id of ['map-extra','comparison-extra','technical-status','quality-filter','csv-import-btn','export-btn'])
+   assert.match(html,new RegExp('id="'+id+'"'),'Controle '+id+' deve continuar disponível');
+ const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(match=>match[1]);
+ assert.equal(ids.length,new Set(ids).size,'Elementos com id duplicado impediriam os controles de funcionar');
+ assert.match(html,/<details[^>]*id="map-extra"/);
+ assert.match(html,/<details[^>]*id="comparison-extra"/);
+ assert.match(html,/1\. Descreva o imóvel/);
+ assert.match(html,/2\. Adicione anúncios semelhantes/);
+ assert.match(html,/3\. Entenda sua comparação/);
+});
