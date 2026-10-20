@@ -336,7 +336,7 @@ test('Orientação: avança da referência para importação e escolha de dois a
  assert.match(ctx.guideAdvice(r,[],[]).message,/CSV/);
  assert.match(ctx.guideAdvice(r,[ad],[]).message,/dois anúncios/);
  assert.match(ctx.guideAdvice(r,[ad],[ad]).message,/mais um/);
- assert.match(ctx.guideAdvice(r,[ad,ad],[ad,ad]).message,/Confira as diferenças/);
+ assert.match(ctx.guideAdvice(r,[ad,ad],[ad,ad]).message,/Confira o indicativo preliminar/);
 });
 test('Resumo guiado: exibe motivos reais de anúncios selecionados sem gerar valor de mercado',()=>{
  ctx.records.length=0;ctx.selected.clear();
