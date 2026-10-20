@@ -9,7 +9,7 @@ function el(id){
 }
 const doc={getElementById:el,createElement(){return {value:'',textContent:'',innerHTML:'',classList:{toggle(){}},querySelector(){return {}},appendChild(){}}}};
 const src=readFileSync(new URL('../app.js',import.meta.url),'utf8');
-const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords,guideAdvice,renderGuidedSummary,selected,computeOfferIndicator,renderOfferIndicator,inferOfferPurpose})',{document:doc,window:{},console,URL});
+const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords,guideAdvice,renderGuidedSummary,selected,computeOfferIndicator,renderOfferIndicator,inferOfferPurpose,setReferenceForTest:reference=>{referenceProfile=reference}})',{document:doc,window:{},console,URL});
 test('VivaReal PLP: preços em array e coordenadas aninhadas',()=>{
   const x=ctx.payload({data:{source:'vivareal.com.br',items:[{
     id:'100',title:'Casa à venda',unitTypes:['HOME'],
@@ -536,22 +536,20 @@ test('Painel de valor responde à seleção sem exigir exportação CSV',()=>{
    neighborhood:'Centro'}
  ];
  ctx.records.push(...records);
- el('ref-name').value='Casa Ana Guilherme';
- el('ref-type').value='house';
- el('ref-city').value='Salto de Pirapora';
- el('ref-state').value='SP';
- el('ref-usable').value='110';
- el('ref-tolerance').value='20';
- el('reference-save').onclick();
- assert.match(el('ref-summary').textContent,/Casa Ana Guilherme/,el('status').textContent);
- assert.match(el('offer-indicator').innerHTML,/Selecione pelo menos dois/,el('status').textContent);
+ // Outros testes inicializam instâncias isoladas do app com o mesmo mock de DOM.
+ // A referência é atribuída à própria instância sob teste, não a um onclick sobreposto.
+ const ref=ctx.makeReference({name:'Casa Ana Guilherme',type:'house',
+   city:'Salto de Pirapora',state:'SP',usable:110,tolerance:20});
+ ctx.setReferenceForTest(ref);
+ ctx.renderOfferIndicator();
+ assert.match(el('offer-indicator').innerHTML,/Selecione pelo menos dois/);
  ctx.selected.add('viva:1');ctx.selected.add('viva:2');
  ctx.renderOfferIndicator();
  assert.match(el('offer-indicator').innerHTML,/R\$ 269\.500/);
  assert.match(el('offer-indicator').innerHTML,/Como este número foi calculado/);
  assert.match(el('offer-indicator').innerHTML,/não um valor de avaliação/);
  ctx.selected.clear();ctx.records.length=0;
- el('reference-clear').onclick();
+ ctx.setReferenceForTest(null);
 });
 
 
