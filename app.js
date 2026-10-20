@@ -1205,7 +1205,10 @@ function parseExportCsv(raw){
       neighborhood,city:row.city?.trim()||'—',
       state:uf(row.state)||row.state?.trim()||'—',
       lat:valid?latitude:null,lng:valid?longitude:null,approx:row.approx?.trim().toLowerCase()==='true',
-      advertiser:row.advertiser?.trim()||'—',description:'—',amenities:[],detailed:false
+      advertiser:row.advertiser?.trim()||'—',description:'—',amenities:[],detailed:false,
+      reviewHistory:parseImportedHistory(row.reviewHistory),
+      reviewImported:!!row.reviewHistory?.trim(),
+      providerSnapshot:null,manualOverrides:{},providerConflicts:{}
     };
     return record;
   });
@@ -1671,6 +1674,14 @@ async function fetchDetails(p,button){
       if(['id','key','source','link'].includes(key))continue;
       if(val===null||val===undefined||val==='—'||(Array.isArray(val)&&!val.length))continue;
       if(key==='type'&&val==='unknown')continue;
+      if(['reviewHistory','manualOverrides','providerSnapshot','reviewImported','providerConflicts'].includes(key))
+        continue;
+      if(p.manualOverrides?.[key]){
+        if(val!==p[key])
+          merged.providerConflicts={...(merged.providerConflicts||{}),
+            [key]:{providerValue:val,reviewedValue:p[key]}};
+        continue;
+      }
       merged[key]=val;
     }
     merged.detailed=true;
@@ -1687,7 +1698,7 @@ for(const id of ['in-radius','min-beds','dedupe','result-type','quality-filter',
 }
 $('export-btn').onclick=()=>{
   const picked=records.filter(p=>selected.has(p.key));if(picked.length<2)return;
-  const fields=['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','textEvidence','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser',
+  const fields=['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','textEvidence','reviewHistory','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser',
     'ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_area_m2','ref_area_tolerance_percent','ref_status','ref_reasons'];
   const derived=p=>{
     const r=referenceProfile,m=assessReference(r,p),land=r&&['land','farm'].includes(r.type);
@@ -1698,10 +1709,11 @@ $('export-btn').onclick=()=>{
       ref_area_m2:r?(land?r.total:r.usable)??'':'',
       ref_area_tolerance_percent:r?.tolerance??'',ref_status:m?.status??'',
       ref_reasons:m?.issues.join(' | ')??'',
-      textEvidence:JSON.stringify(p.textEvidence??[])
+      textEvidence:JSON.stringify(p.textEvidence??[]),
+      reviewHistory:JSON.stringify((p.reviewHistory||[]).slice(-60))
     };
   };
-  const formulaSensitive=new Set(['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','textEvidence','title','link','neighborhood','city','state','advertiser','ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_status','ref_reasons']);
+  const formulaSensitive=new Set(['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','textEvidence','reviewHistory','title','link','neighborhood','city','state','advertiser','ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_status','ref_reasons']);
   const csvValue=(key,value)=>{
     const raw=String(value??'');
     // Protege a abertura do CSV em planilhas contra fórmulas injetadas em
