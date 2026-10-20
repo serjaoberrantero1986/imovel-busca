@@ -563,6 +563,113 @@ const REVIEW_FIELDS={
   spaces:{label:'Vagas',min:0,max:1000,integer:true}
 };
 const REVIEW_SOURCES=new Set(['listing','title','description','document','contact']);
+
+const REVIEW_STATE_LABELS={
+  unread:'○ Não visualizado',viewed:'◉ Visualizado, sem confirmar',
+  confirmed:'✓ Conferido sem alterações',edited:'✓ Dados corrigidos',
+  imported:'◈ Conferência importada (não autenticada)'
+};
+const REVIEW_LOCAL_KEY='imovel-busca.revisoes-local-v1';
+function reviewState(p){
+  if(!p)return 'unread';
+  if(p.reviewImported&&(p.reviewHistory?.length||p.reviewConfirmation))return 'imported';
+  if(p.reviewConfirmation)
+    return Object.keys(p.manualOverrides||{}).some(f=>p.manualOverrides[f])?'edited':'confirmed';
+  if(p.reviewHistory?.some(x=>x.source!=='restore'))return 'edited';
+  return p.viewedAt?'viewed':'unread';
+}
+function reviewBadge(p){
+  const state=reviewState(p);
+  return '<span class="review-state '+state+'">'+safe(REVIEW_STATE_LABELS[state])+'</span>';
+}
+function validateReviewConfirmation(o){
+  if(!o||!REVIEW_SOURCES.has(o.source)||typeof o.note!=='string'||
+     o.note.trim().length<12||o.note.length>700||
+     typeof o.at!=='string'||!/^\d{4}-\d\d-\d\dT/.test(o.at))return null;
+  return {source:o.source,note:o.note,at:o.at,
+    changes:Number.isInteger(o.changes)?o.changes:0,
+    evidenceLevel:'declaração local sem autenticação profissional'};
+}
+function validatedReviewEntries(data){
+  if(!Array.isArray(data))return [];
+  const entries=[];
+  for(const e of data.slice(-60)){
+    if(!e||typeof e!=='object'||typeof e.note!=='string'||e.note.length>700||
+       typeof e.at!=='string'||!/^\d{4}-\d\d-\d\dT/.test(e.at)||
+       !['listing','title','description','document','contact','restore'].includes(e.source))continue;
+    if(e.field==='verification'){
+      entries.push({field:'verification',oldValue:null,newValue:null,source:e.source,
+        note:e.note,at:e.at,evidenceLevel:'declaração local sem autenticação'});
+      continue;
+    }
+    if(!Object.hasOwn(REVIEW_FIELDS,e.field))continue;
+    try{
+      entries.push({field:e.field,oldValue:reviewFieldNumber(e.oldValue,e.field),
+        newValue:reviewFieldNumber(e.newValue,e.field),source:e.source,
+        note:e.note,at:e.at,evidenceLevel:'declaração local sem autenticação'});
+    }catch{/* Ignorar campos inválidos de dados locais ou importados. */}
+  }
+  return entries;
+}
+function browserReviewKey(p){
+  return [p.source,p.id,p.link||'',canon(p.city),uf(p.state)].join('|');
+}
+function readSavedReviews(){
+  try{
+    const raw=window.localStorage?.getItem(REVIEW_LOCAL_KEY);
+    if(!raw||raw.length>2500000)return {};
+    const obj=JSON.parse(raw);
+    return obj?.version===1&&obj.entries&&typeof obj.entries==='object'&&!Array.isArray(obj.entries)?obj.entries:{};
+  }catch{return {};}
+}
+function saveBrowserReview(p){
+  try{
+    const storage=window.localStorage;
+    if(!storage)return false;
+    const entries=readSavedReviews();
+    const key=browserReviewKey(p);
+    delete entries[key];
+    const values={};
+    for(const field of Object.keys(REVIEW_FIELDS))
+      if(p.manualOverrides?.[field])values[field]=p[field]??null;
+    entries[key]={
+      source:p.source,id:p.id,link:p.link||'',city:p.city,state:p.state,
+      viewedAt:p.viewedAt||null,
+      reviewConfirmation:p.reviewConfirmation||null,
+      reviewHistory:(p.reviewHistory||[]).slice(-60),
+      providerSnapshot:p.providerSnapshot||null,
+      manualOverrides:p.manualOverrides||{},values,
+      reviewImported:Boolean(p.reviewImported)
+    };
+    const keys=Object.keys(entries);
+    for(const old of keys.slice(0,Math.max(0,keys.length-600)))delete entries[old];
+    storage.setItem(REVIEW_LOCAL_KEY,JSON.stringify({version:1,entries}));
+    return true;
+  }catch{return false;}
+}
+function restoreBrowserReview(p){
+  try{
+    const e=readSavedReviews()[browserReviewKey(p)];
+    if(!e||e.source!==p.source||String(e.id)!==String(p.id)||
+      e.city!==p.city||uf(e.state)!==uf(p.state)||(e.link||'')!==(p.link||''))return p;
+    const out={...p,viewedAt:typeof e.viewedAt==='string'?e.viewedAt:null,
+      reviewHistory:validatedReviewEntries(e.reviewHistory),
+      reviewConfirmation:validateReviewConfirmation(e.reviewConfirmation),
+      reviewImported:Boolean(e.reviewImported),manualOverrides:{}};
+    if(e.providerSnapshot&&typeof e.providerSnapshot==='object'){
+      out.providerSnapshot=Object.fromEntries(Object.keys(REVIEW_FIELDS).map(field=>
+        [field,reviewFieldNumber(e.providerSnapshot[field],field)]));
+      for(const field of Object.keys(REVIEW_FIELDS)){
+        if(e.manualOverrides?.[field]===true){
+          out[field]=reviewFieldNumber(e.values?.[field],field);
+          out.manualOverrides[field]=true;
+        }
+      }
+    }
+    return out;
+  }catch{return p;}
+}
+
 let activeReviewKey=null;
 function reviewFieldNumber(raw,field){
   const v=REVIEW_FIELDS[field];
