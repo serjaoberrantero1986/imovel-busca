@@ -356,6 +356,122 @@ function referenceTitle(reference){
   return reference.type==='other'?reference.customType:typeLabel[reference.type];
 }
 
+
+/*
+ * INDICATIVO DE OFERTAS — não é avaliação mercadológica nem PTAM.
+ * Base estatística transparente: mediana dos preços pedidos/m², projetada
+ * para a área do imóvel de referência, sem "fatores" arbitrários.
+ * Faixa exibida = extremos observados na amostra, NÃO intervalo de confiança.
+ */
+function indicatorMedian(sorted){
+  const mid=Math.floor(sorted.length/2);
+  return sorted.length%2?sorted[mid]:(sorted[mid-1]+sorted[mid])/2;
+}
+function indicatorSimilarListing(a,b){
+  // Indicadores não devem contar o mesmo anúncio duas vezes. Coincidências
+  // mais amplas são apenas indícios; este teste é conservador.
+  if(a.source===b.source&&a.id&&b.id&&a.id===b.id)return true;
+  const aLink=url(a.link),bLink=url(b.link);
+  if(aLink&&bLink&&aLink===bLink)return true;
+  return false;
+}
+function computeOfferIndicator(reference,chosen){
+  const list=Array.isArray(chosen)?chosen:[];
+  const base={status:'unavailable',value:null,low:null,high:null,unitMedian:null,
+    area:null,areaLabel:'',included:[],excluded:[],selectedCount:list.length,
+    reliability:'Não calculável',reasons:[]};
+  if(!reference)return {...base,reasons:['Cadastre o imóvel de referência antes de calcular o indicativo.']};
+  if(reference.type==='other')return {...base,reasons:['Tipologia personalizada: valide equivalência dos anúncios manualmente antes de estimar valores.']};
+  const areaKey=['land','farm'].includes(reference.type)?'total':'usable';
+  const areaLabel=areaKey==='total'?'área de terreno':'área útil / privativa';
+  const area=reference[areaKey];
+  if(!Number.isFinite(area)||area<=0)
+    return {...base,areaLabel,reasons:['Informe a '+areaLabel+' do imóvel de referência para obter o valor preliminar.']};
+  const result={...base,area,areaLabel,reasons:[]};
+  if(list.length<2){
+    result.reasons.push('Selecione pelo menos dois anúncios para calcular o indicativo.');
+    return result;
+  }
+  for(const item of list){
+    const p=item||{},label=p.title||p.id||'Anúncio sem título';
+    const issue=(reason)=>result.excluded.push({key:p.key||null,label,reason});
+    const review=assessReference(reference,p);
+    if(review.status==='incompatible'){issue('Tipologia ou município incompatível.');continue;}
+    if(review.status==='insufficient'){issue('Dados essenciais ausentes: '+(review.issues[0]||'verifique os atributos')+'.');continue;}
+    if(p.type!==reference.type){issue('Subtipos diferentes precisam de conferência antes do cálculo.');continue;}
+    const pArea=p[areaKey];
+    if(!Number.isFinite(p.price)||p.price<=0||!Number.isFinite(pArea)||pArea<=0){
+      issue('Preço pedido ou área do anúncio inválidos.');continue;
+    }
+    if(review.areaDeviation===null||review.areaDeviation>reference.tolerance){
+      issue('Metragem fora da tolerância ±'+reference.tolerance+'% definida para o imóvel.');continue;
+    }
+    if(result.included.some(other=>indicatorSimilarListing(p,other.item))){
+      issue('Mesmo anúncio encontrado mais de uma vez.');continue;
+    }
+    result.included.push({item:p,key:p.key||null,label,area:pArea,ask:p.price,
+      unit:p.price/pArea,normalized:(p.price/pArea)*area,
+      warnings:review.issues.slice(0,5)});
+  }
+  if(result.included.length<2){
+    result.reasons.push('Apenas '+result.included.length+' anúncio(s) da seleção passaram pelos requisitos. É necessário ter ao menos dois para mostrar um indicativo.');
+    return result;
+  }
+  const units=result.included.map(x=>x.unit).sort((a,b)=>a-b);
+  result.unitMedian=indicatorMedian(units);
+  result.value=result.unitMedian*area;
+  result.low=units[0]*area;
+  result.high=units.at(-1)*area;
+  result.status='ready';
+  result.reliability=result.included.length<5?'Baixa — amostra pequena':'Limitada — dados de oferta sem homogeneização';
+  if(result.included.length<5)
+    result.reasons.push('Somente '+result.included.length+' anúncios válidos; a amostra é pequena.');
+  if(result.included.some(x=>x.warnings.length))
+    result.reasons.push('Os anúncios apresentam diferenças de características que não foram ajustadas matematicamente.');
+  const spread=(units.at(-1)-units[0])/result.unitMedian;
+  if(spread>0.3)result.reasons.push('Dispersão dos preços por m² superior a 30% da mediana.');
+  if(result.excluded.length)
+    result.reasons.push(result.excluded.length+' anúncio(s) selecionado(s) não entraram no cálculo.');
+  result.reasons.push('Preços pedidos não equivalem a valores efetivos de transação.');
+  return result;
+}
+function renderOfferIndicator(){
+  const host=$('offer-indicator');
+  if(!host)return;
+  const chosen=records.filter(p=>selected.has(p.key));
+  const stats=computeOfferIndicator(referenceProfile,chosen);
+  if(stats.status!=='ready'){
+    host.innerHTML='<div class="offer-empty"><div class="offer-kicker">Indicativo preliminar na tela</div>'+
+      '<h3>Aguardando dados para estimar</h3><p>'+safe(stats.reasons.join(' '))+'</p>'+
+      '<p class="offer-note">Não é necessário exportar CSV para obter um resultado.</p></div>';
+    return;
+  }
+  const approx=value=>money(Math.round(value/1000)*1000);
+  const warnings=stats.reasons.map(reason=>'<li>'+safe(reason)+'</li>').join('');
+  host.innerHTML=
+    '<div class="offer-kicker">Indicativo preliminar · preços anunciados</div>'+
+    '<div class="offer-value">'+safe(approx(stats.value))+'</div>'+
+    '<div class="offer-subtitle">Mediana de '+stats.included.length+' anúncios equivalentes em tipologia, município e faixa de metragem.</div>'+
+    '<div class="offer-band"><div><small>Menor projeção observada</small><strong>'+safe(approx(stats.low))+'</strong></div>'+
+      '<div><small>Maior projeção observada</small><strong>'+safe(approx(stats.high))+'</strong></div></div>'+
+    '<div class="offer-meta"><span class="pill quality-warn">Confiabilidade: '+safe(stats.reliability)+'</span>'+
+      '<span>'+stats.selectedCount+' selecionados · '+stats.excluded.length+' excluídos do cálculo</span></div>'+
+    '<ul class="offer-warnings">'+warnings+'</ul>'+
+    '<details class="offer-details"><summary>Como este número foi calculado</summary>'+
+      '<p>Mediana dos preços <strong>anunciados</strong> por m² × '+safe(stats.area)+
+      ' m² de '+safe(stats.areaLabel)+'. Mediana: '+safe(money(stats.unitMedian))+'/m².'+
+      ' A faixa é o menor e o maior preço por m² observados, projetados para a mesma área; '+
+      '<strong>não é intervalo de confiança nem aplicação de ajustes por fatores</strong>.</p>'+
+      '<div class="table-scroll"><table><thead><tr><th>Anúncio</th><th>Preço pedido</th><th>Área</th><th>Preço/m²</th><th>Projeção</th></tr></thead><tbody>'+
+      stats.included.map(x=>'<tr><td>'+safe(x.label)+'</td><td>'+safe(money(x.ask))+'</td>'+
+        '<td>'+safe(x.area)+' m²</td><td>'+safe(money(x.unit))+'</td><td>'+safe(approx(x.normalized))+'</td></tr>').join('')+
+      '</tbody></table></div>'+
+      (stats.excluded.length?'<p><strong>Fora do cálculo:</strong> '+
+         stats.excluded.map(x=>safe(x.label)+' — '+safe(x.reason)).join('; ')+'</p>':'')+
+    '</details>'+
+    '<p class="offer-disclaimer">Isto é um <strong>indicador de ofertas comparáveis</strong>, não um valor de avaliação tecnicamente validado, laudo ou PTAM. O preço pode mudar após verificar características, transações e metodologia.</p>';
+}
+
 function guideAdvice(reference,items,chosen){
   const label=reference&&['land','farm'].includes(reference.type)?'área do terreno':'área útil / privativa';
   const area=reference?(['land','farm'].includes(reference.type)?reference.total:reference.usable):null;
@@ -599,7 +715,7 @@ function renderComparison() {
     '<p class="hint">Triagem preliminar: '+safe(cautions.join(' ')||'Campos essenciais presentes; confirme os anúncios, localização e homogeneidade.')+
     ' Preços anunciados não representam preços efetivos de venda. Nenhuma avaliação ou PTAM é calculado.</p>';
 }
-function refresh(){renderCards();renderComparison();renderGuidedSummary();}
+function refresh(){renderCards();renderComparison();renderGuidedSummary();renderOfferIndicator();}
 function loadNormalized(items,total=null,detailed=false){
   const known=new Map(records.map((x,i)=>[x.key,i]));
   for (const p of items) {
