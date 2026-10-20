@@ -828,13 +828,111 @@ $('clear-btn').onclick=()=>{records=[];selected.clear();reported=null;center=nul
 function tab(which){const api=which==='api';$('import-panel').classList.toggle('hidden',api);$('api-panel').classList.toggle('hidden',!api);$('tab-api').classList.toggle('active',api);$('tab-import').classList.toggle('active',!api);}
 $('tab-import').onclick=()=>tab('import');$('tab-api').onclick=()=>tab('api');
 const GEO_PORTALS=new Set(['zapimoveis.com.br','vivareal.com.br','chavesnamao.com.br']);
+
+const MIXED_PORTALS=[
+  {target:'zapimoveis.com.br',label:'ZAP Imóveis',input:'mixed-zap'},
+  {target:'vivareal.com.br',label:'VivaReal',input:'mixed-viva'},
+  {target:'olx.com.br',label:'OLX',input:'mixed-olx'},
+  {target:'chavesnamao.com.br',label:'Chaves na Mão',input:'mixed-chaves'},
+  {target:'imovelweb.com.br',label:'Imovelweb',input:'mixed-imovelweb',requiresUrl:true}
+];
+const mixedName=target=>MIXED_PORTALS.find(item=>item.target===target)?.label||target;
+const mixedMode=()=>$('operation').value==='plp'&&$('mixed-enabled').checked;
+function mixedTargets(){return MIXED_PORTALS.filter(item=>$(item.input).checked).map(item=>item.target);}
+function validateProviderUrl(link,expected){
+  try{
+    const parsed=new URL(link);
+    return parsed.protocol==='https:'&&!parsed.username&&!parsed.password&&!parsed.port&&
+      (parsed.hostname===expected||parsed.hostname.endsWith('.'+expected));
+  }catch{return false;}
+}
+function planMixedSearch(base,targets,options={}){
+  if(!base||base.type!=='plp')throw Error('Pesquisa multifonte permite apenas listas de anúncios (PLP).');
+  if(!Array.isArray(targets)||!targets.length)throw Error('Selecione pelo menos uma fonte.');
+  if(new Set(targets).size!==targets.length||targets.length>MIXED_PORTALS.length||
+     targets.some(x=>!MIXED_PORTALS.some(item=>item.target===x)))
+    throw Error('Lista de portais inválida ou repetida.');
+  if(String(base.city||'').trim().length<2||!uf(base.state))
+    throw Error('Preencha cidade e UF válidas antes de consultar várias fontes.');
+  if(options.imovelwebUrl&&targets.includes('imovelweb.com.br')){
+    if(!validateProviderUrl(options.imovelwebUrl,'imovelweb.com.br')||
+       !new URL(options.imovelwebUrl).pathname.endsWith('.html'))
+      throw Error('Imovelweb exige uma URL HTTPS pública de resultados, do próprio domínio, terminada em .html.');
+  }else if(targets.includes('imovelweb.com.br'))
+    throw Error('Para incluir o Imovelweb, cole a URL pública de resultados terminada em .html ou desmarque essa fonte.');
+  return targets.map(target=>{
+    const query={...base,target,type:'plp'};
+    // Ordenação e URL da pesquisa simples são específicas de cada portal.
+    delete query.sort;delete query.url;delete query.region;delete query.categoryPath;
+    // As três APIs estruturadas aceitam localização aproximada; as outras não.
+    if(!GEO_PORTALS.has(target)){
+      delete query.searchNear;delete query.latitude;delete query.longitude;
+    }
+    if(target==='imovelweb.com.br')query.url=options.imovelwebUrl;
+    if(target==='olx.com.br'){
+      if(options.olxRegion)query.region=options.olxRegion;
+      query.categoryPath=options.olxCategory||'imoveis';
+    }
+    return query;
+  });
+}
+function updateMixedCost(){
+  const targets=mixedTargets(),count=targets.length;
+  $('mixed-cost').textContent=count+' fonte(s) selecionada(s): até '+count+
+    ' consulta(s) à GeckoAPI nesta execução (uma página por fonte). A cobrança real é definida pela API.'+
+    (targets.includes('imovelweb.com.br')?' Para Imovelweb, informe a URL pública .html.':'');
+  $('mixed-imovelweb-wrap').classList.toggle('hidden',!targets.includes('imovelweb.com.br'));
+}
+function syncMixedControls(){
+  const mode=mixedMode(),pdp=$('operation').value==='pdp';
+  $('mixed-switch-wrap').classList.toggle('hidden',pdp);
+  $('mixed-picker').classList.toggle('hidden',!mode);
+  $('single-portal-wrap').classList.toggle('hidden',mode);
+  $('portal').disabled=mode;
+  updateMixedCost();
+}
+$('mixed-enabled').addEventListener('change',syncForm);
+for(const item of MIXED_PORTALS)$(item.input).addEventListener('change',()=>{updateMixedCost();syncForm();});
+$('mixed-select-structured').onclick=()=>{
+  for(const p of MIXED_PORTALS)$(p.input).checked=!p.requiresUrl;
+  updateMixedCost();syncForm();
+};
+$('mixed-select-all').onclick=()=>{
+  for(const p of MIXED_PORTALS)$(p.input).checked=true;
+  updateMixedCost();syncForm();
+};
+$('mixed-select-none').onclick=()=>{
+  for(const p of MIXED_PORTALS)$(p.input).checked=false;
+  updateMixedCost();syncForm();
+};
+$('mixed-fill-reference').onclick=()=>{
+  if(!referenceProfile){report('Cadastre e salve seu imóvel de referência na etapa 1.',true);return;}
+  const r=referenceProfile;
+  $('city').value=r.city;$('state').value=r.state;
+  $('property-type').value=r.type==='other'?'':r.type;
+  // Se a referência tiver dormitórios, usar o mínimo apenas nos filtros locais;
+  // contagens exatas no provedor não são equivalentes a um mínimo.
+  $('bedrooms-min').value=r.beds??'';
+  $('neighborhood').value=r.neighborhood||'';
+  // Não inferir área útil a partir de área de terreno ou construída.
+  if(!['land','farm'].includes(r.type)&&r.usable&&Number.isFinite(r.usable)){
+    $('area-min').value=Math.max(0,Math.floor(r.usable*(1-r.tolerance/100)));
+    $('area-max').value=Math.ceil(r.usable*(1+r.tolerance/100));
+  }else {
+    $('area-min').value='';$('area-max').value='';
+  }
+  $('business-type').value='sale';
+  syncForm();
+  report('Campos de busca preenchidos a partir do imóvel de referência. Revise a tipologia e a finalidade antes da consulta paga.');
+};
+
 const SORT_OPTIONS={
  'olx.com.br':[['relevance','Relevância'],['date','Mais recentes'],['price','Menor preço'],['biggest_price','Maior preço'],['price_relevance','Preço relevante']],
  'vivareal.com.br':[['relevance','Relevância'],['date','Mais recentes'],['price','Menor preço'],['biggest_price','Maior preço'],['biggest_area','Maior área']],
  'chavesnamao.com.br':[['relevance','Relevância'],['price','Menor preço'],['biggest_price','Maior preço']]
 };
 function syncOlxPilotLocation(){
-  const isOlx=$('portal').value==='olx.com.br';
+  const isOlx=mixedMode()?$('mixed-olx').checked:$('portal').value==='olx.com.br';
   const local=isOlx&&canon($('city').value)==='salto de pirapora'&&canon($('state').value)==='sp';
   $('olx-reference').classList.toggle('hidden',!local||$('operation').value==='pdp');
   if(local&&['','sorocaba'].includes(canon($('olx-region').value)))
@@ -849,19 +947,23 @@ function syncOlxPilotLocation(){
 }
 function syncForm(){
   const portal=$('portal').value,pdp=$('operation').value==='pdp';
+  const mixed=!pdp&&$('mixed-enabled').checked;
+  syncMixedControls();
   $('pdp-wrap').classList.toggle('hidden',!pdp);
   const urlEnabled=['olx.com.br','imovelweb.com.br','vivareal.com.br','chavesnamao.com.br'].includes(portal);
-  $('search-url-wrap').classList.toggle('hidden',pdp||!urlEnabled);
-  $('olx-region-wrap').classList.toggle('hidden',pdp||portal!=='olx.com.br');
-  $('olx-category-wrap').classList.toggle('hidden',pdp||portal!=='olx.com.br');
-  $('olx-region').disabled=pdp||portal!=='olx.com.br';
-  $('olx-category').disabled=pdp||portal!=='olx.com.br';
+  $('search-url-wrap').classList.toggle('hidden',pdp||mixed||!urlEnabled);
+  const wantsOlx=!pdp&&(mixed?$('mixed-olx').checked:portal==='olx.com.br');
+  $('olx-region-wrap').classList.toggle('hidden',!wantsOlx);
+  $('olx-category-wrap').classList.toggle('hidden',!wantsOlx);
+  $('olx-region').disabled=!wantsOlx;
+  $('olx-category').disabled=!wantsOlx;
   syncOlxPilotLocation();
   for(const id of ['city','state','page','keyword','property-type','neighborhood','price-min','price-max','area-min','area-max','bedrooms-min','bathrooms-min','parking-min','search-near','search-url','business-type','sort']){
     $(id).disabled=pdp;
   }
-  $('search-near').disabled=pdp||!GEO_PORTALS.has(portal);
-  if(!GEO_PORTALS.has(portal))$('search-near').checked=false;
+  $('search-near').disabled=pdp||mixed||!GEO_PORTALS.has(portal);
+  if(mixed||!GEO_PORTALS.has(portal))$('search-near').checked=false;
+  $('sort').disabled=pdp||mixed;
   const select=$('sort'),prior=select.value;
   select.replaceChildren();
   for(const [value,label] of [['','Padrão do portal'],...(SORT_OPTIONS[portal]||[])]){
@@ -869,11 +971,12 @@ function syncForm(){
   }
   select.value=(SORT_OPTIONS[portal]||[]).some(([value])=>value===prior)?prior:'';
   $('provider-hint').textContent=pdp?'Detalhamento de uma URL por vez.':
+    mixed?'Pesquisa mista: uma chamada por fonte; falhas isoladas e cidade/UF auditadas em cada resposta.':
     portal==='olx.com.br'?'OLX: categoria e região são nativas; cidade e UF também serão conferidas em cada anúncio.':
     portal==='imovelweb.com.br'?'Imovelweb: forneça uma URL de resultados terminada em .html.':
     portal==='zapimoveis.com.br'?'ZAP: tipo, preço, área útil e bairro. Não aceita URL de busca nessa API.':
     'Tipo, preço, área, bairro e URL pública de busca; cidade/UF são auditadas em cada anúncio.';
-  $('url-help').textContent=portal==='imovelweb.com.br'?
+  $('url-help').textContent=mixed?'Na pesquisa mista, os filtros seguem as capacidades de cada portal. Imovelweb requer URL pública e as contagens mínimas são aplicadas localmente.':portal==='imovelweb.com.br'?
     'Imovelweb: cole a URL de resultados .html. O site não aceita filtros estruturados nesta API.':
     portal==='olx.com.br'?'OLX: a documentação aceita URL de lista estadual/nacional. Para pesquisar um município, prefira os campos cidade + UF + região oficial.':
     'VivaReal/Chaves: URL opcional; pode preservar os filtros do portal. Cidade/UF continuam verificadas na resposta.';
