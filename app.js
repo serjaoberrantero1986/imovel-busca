@@ -833,8 +833,8 @@ function syncSelectionToolbar(visible){
   $('select-all-visible').disabled=!visible.length||all;
   $('deselect-all-visible').disabled=!count;
   $('deselect-all').disabled=!selected.size;
-  $('selection-counter').textContent=selected.size+' selecionado(s) no total · '+count+
-    ' de '+visible.length+' selecionado(s) entre os anúncios visíveis.';
+  $('selection-counter').textContent=selected.size+' em análise · '+count+
+    ' de '+visible.length+' anúncios visíveis. Nem todos entrarão no cálculo.';
 }
 $('select-all-visible').onclick=()=>bulkSelectVisible(true);
 $('deselect-all-visible').onclick=()=>bulkSelectVisible(false);
@@ -844,14 +844,22 @@ function clearComparableSelection(){
 }
 $('deselect-all').onclick=clearComparableSelection;
 $('select-all-visible-toggle').onchange=event=>bulkSelectVisible(Boolean(event.target.checked));
+$('auto-select-new').addEventListener('change',()=>{
+  report($('auto-select-new').checked?
+    'Novos anúncios serão incluídos automaticamente. Imóveis desmarcados manualmente permanecem desmarcados.':
+    'A inclusão automática dos próximos anúncios foi desativada. Sua seleção atual foi preservada.');
+});
 
+let visibleCardLimit=40;
+$('show-more-cards').onclick=()=>{visibleCardLimit+=40;refresh();};
 function renderCards() {
   const box = $('results'); box.replaceChildren();
   const visible = visibleRecords();
   syncSelectionToolbar(visible);
   $('filter-status').textContent = visible.length + ' de ' + records.length + ' anúncios visíveis com os filtros atuais.'+(activeLocation?' Município: '+activeLocation.label+'.':'');
   if (!visible.length) {const el=document.createElement('p');el.className='muted';el.textContent='Nenhum anúncio corresponde aos filtros.';box.appendChild(el);}
-  for (const p of visible) {
+  const batch=visible.slice(0,visibleCardLimit);
+  for (const p of batch) {
     const card=document.createElement('article'); card.className='listing'+(selected.has(p.key)?' selected':'');
     const dis=distance(center,p), flag=$('dedupe').checked&&duplicate(p);
     const review=reviewComparable(p);
@@ -886,6 +894,8 @@ function renderCards() {
     if(details)details.onclick=()=>fetchDetails(p,details);
     box.appendChild(card);
   }
+  $('show-more-cards').classList.toggle('hidden',visibleCardLimit>=visible.length);
+  $('show-more-cards').textContent='Mostrar mais imóveis ('+batch.length+' de '+visible.length+')';
   $('loaded').textContent=records.length;$('total').textContent=reported??'—';$('mapped').textContent=records.filter(validPoint).length;$('picked').textContent=selected.size;
   $('complete').textContent=records.filter(p=>reviewComparable(p).status==='complete').length;
   $('needs-review').textContent=records.filter(p=>reviewComparable(p).status!=='complete').length;
@@ -945,6 +955,7 @@ function loadNormalized(items,total=null,detailed=false){
     } else {
       known.set(p.key,records.length);
       records.push({...p,detailed});
+      if($('auto-select-new').checked)selected.add(p.key);
     }
   }
   if(total!==null)reported=total;
