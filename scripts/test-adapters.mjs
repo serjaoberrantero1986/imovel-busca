@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 const els=new Map();
 function el(id){
-  if(!els.has(id))els.set(id,{value:id==='radius'?'5':'',checked:false,disabled:false,innerHTML:'',textContent:'',classList:{toggle(){},add(){}},children:[],addEventListener(){},replaceChildren(){},appendChild(){},querySelector(){return {}}});
+  if(!els.has(id))els.set(id,{value:id==='radius'?'5':'',checked:false,disabled:false,innerHTML:'',textContent:'',classList:{toggle(){},add(){},remove(){}},children:[],addEventListener(){},replaceChildren(){},appendChild(){},querySelector(){return {}}});
   return els.get(id);
 }
 const doc={getElementById:el,createElement(){return {value:'',textContent:'',innerHTML:'',classList:{toggle(){}},querySelector(){return {}},appendChild(){}}}};
