@@ -886,6 +886,21 @@ function planMixedSearch(base,targets,options={}){
     throw Error('Lista de portais inválida ou repetida.');
   if(String(base.city||'').trim().length<2||!uf(base.state))
     throw Error('Preencha cidade e UF válidas antes de consultar várias fontes.');
+  if(!Number.isInteger(base.page)||base.page<1||base.page>10)
+    throw Error('Informe página entre 1 e 10 para a pesquisa mista.');
+  for(const name of ['priceMin','priceMax','areaMin','areaMax']){
+    const value=base[name];
+    if(value!==undefined&&value!==null&&(!Number.isInteger(value)||value<0))
+      throw Error('Preencha valores de preço e área válidos antes das chamadas pagas.');
+  }
+  if(base.priceMin!==undefined&&base.priceMax!==undefined&&base.priceMin>base.priceMax)
+    throw Error('O preço mínimo é maior que o máximo.');
+  if(base.areaMin!==undefined&&base.areaMax!==undefined&&base.areaMin>base.areaMax)
+    throw Error('A área mínima é maior que a máxima.');
+  if(!['sale','rent'].includes(base.businessType))
+    throw Error('Selecione venda ou aluguel para a pesquisa mista.');
+  if(base.propertyType&&(!Object.hasOwn(typeLabel,base.propertyType)||base.propertyType==='unknown'||base.propertyType==='other'))
+    throw Error('Selecione uma tipologia compatível com os portais de pesquisa.');
   if(options.imovelwebUrl&&targets.includes('imovelweb.com.br')){
     if(!validateProviderUrl(options.imovelwebUrl,'imovelweb.com.br')||
        !new URL(options.imovelwebUrl).pathname.endsWith('.html'))
