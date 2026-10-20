@@ -176,6 +176,7 @@ function reviewComparable(p) {
   };
 }
 const qualityLabels={complete:'Dados essenciais completos',review:'Requer conferência',insufficient:'Dados insuficientes'};
+const areaForLocalComparison=p=>['land','farm'].includes(p.type)?p.total:p.usable;
 function duplicate(p) {
   const area=['land','farm'].includes(p.type)?p.total:p.usable;
   if(p.type==='unknown'||!p.price||!area||!p.city||!uf(p.state)||!p.neighborhood||p.neighborhood==='—')return false;
@@ -387,8 +388,8 @@ function visibleRecords(){
     if(minSpaces!==null&&(p.spaces===null||p.spaces<minSpaces))return false;
     if(pMin!==null&&(p.price===null||p.price<pMin))return false;
     if(pMax!==null&&(p.price===null||p.price>pMax))return false;
-    if(aMin!==null&&(p.usable===null||p.usable<aMin))return false;
-    if(aMax!==null&&(p.usable===null||p.usable>aMax))return false;
+    if(aMin!==null&&(areaForLocalComparison(p)===null||areaForLocalComparison(p)<aMin))return false;
+    if(aMax!==null&&(areaForLocalComparison(p)===null||areaForLocalComparison(p)>aMax))return false;
     if(onlyRadius&&(!validPoint(p)||distance(center,p)>km))return false;
     return true;
   });
@@ -451,7 +452,9 @@ function renderCards() {
       '<div class="price">'+safe(money(p.price))+'</div>'+
       (review.unitPrice!==null?'<div class="muted">'+safe(money(review.unitPrice))+' / '+safe(review.unitAreaLabel)+' (preço pedido)</div>':'')+
       (review.issues.length?'<div class="quality-reasons">'+review.issues.map(x=>'<span>'+safe(x)+'</span>').join('')+'</div>':'')+
-      '<div class="row"><span class="pill">'+safe(text(p.usable))+' m² úteis</span><span class="pill">'+safe(text(p.beds))+' dorm.</span><span class="pill">'+safe(text(p.suites))+' suítes</span><span class="pill">'+safe(text(p.baths))+' banh.</span><span class="pill">'+safe(text(p.spaces))+' vagas</span></div>'+
+      '<div class="row"><span class="pill">'+safe(text(areaForLocalComparison(p)))+' '+(['land','farm'].includes(p.type)?'m² terreno':'m² úteis')+'</span>'+
+      (['land','farm'].includes(p.type)?'':p.total!==null?'<span class="pill">'+safe(text(p.total))+' m² total</span>':'')+
+      '<span class="pill">'+safe(text(p.beds))+' dorm.</span><span class="pill">'+safe(text(p.suites))+' suítes</span><span class="pill">'+safe(text(p.baths))+' banh.</span><span class="pill">'+safe(text(p.spaces))+' vagas</span></div>'+
       '<div class="muted">'+safe(p.neighborhood)+' · '+safe(p.city)+(dis!==null?' · '+dis.toFixed(1)+' km do centro':'')+'</div>'+
       (flag?'<span class="pill orange">Possível duplicidade — revisar</span>':'')+
       '<div class="row between"><label class="check"><input class="pick" type="checkbox" '+(selected.has(p.key)?'checked':'')+'> Comparar</label>'+(p.link?'<a class="link" target="_blank" rel="noopener noreferrer" href="'+safe(p.link)+'">Ver anúncio ↗</a>':'')+'</div>'+
