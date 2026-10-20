@@ -50,7 +50,13 @@ function classify(item) {
     if(/\b(casa|casas)\b/.test(raw))return 'house';
     return 'unknown';
   };
-  const structured=identify(canon([item.realtyType?.name,item.property?.type,item.propertyType,item.typeLabel].filter(Boolean).join(' ')));
+  const typeFields=[item.realtyType?.name,item.property?.type,item.propertyType,item.typeLabel].filter(Boolean);
+  for(const entry of typeFields){
+    const code=canon(entry).replace(/\s+/g,'_');
+    if(code!=='unknown'&&code!=='other'&&Object.hasOwn(typeLabel,code))return code;
+    if(code==='studio')return 'kitnet';
+  }
+  const structured=identify(canon(typeFields.join(' ')));
   if(structured!=='unknown')return structured;
   // O CSV exportado não tinha coluna de tipo. Quando o próprio link VivaReal
   // informa explicitamente a tipologia, aproveitamos somente esse prefixo.
@@ -244,6 +250,8 @@ function assessReference(reference,p){
   if(!reference)return null;
   const missing=[],warnings=[],incompatible=[],positive=[];
   const expected=reference.type,actual=p.type;
+  if(!Number.isFinite(p.price)||p.price<=0)
+    missing.push('Anúncio sem preço pedido verificável.');
   if(expected==='other'){
     missing.push('Tipologia personalizada: confirmar compatibilidade manualmente.');
   }else if(actual==='unknown'||!actual){
