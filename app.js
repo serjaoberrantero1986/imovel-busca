@@ -353,6 +353,8 @@ $('reference-save').onclick=()=>{
   try{
     referenceProfile=makeReference(readReferenceFields());
     showReference();
+    // Exibir a referência mesmo quando estiver fora da cidade padrão do mapa.
+    if(map&&referenceProfile.lat!==null)map.setView([referenceProfile.lat,referenceProfile.lng],12);
     drawMap(false);refresh();
     report('Imóvel de referência atualizado. A compatibilidade é uma triagem de características, não uma avaliação de mercado.');
   }catch(e){report(e.message||'Dados inválidos do imóvel de referência.',true);}
