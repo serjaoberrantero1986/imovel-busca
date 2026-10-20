@@ -9,7 +9,7 @@ function el(id){
 }
 const doc={getElementById:el,createElement(){return {value:'',textContent:'',innerHTML:'',classList:{toggle(){}},querySelector(){return {}},appendChild(){}}}};
 const src=readFileSync(new URL('../app.js',import.meta.url),'utf8');
-const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records})',{document:doc,window:{},console,URL});
+const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords})',{document:doc,window:{},console,URL});
 test('VivaReal PLP: preços em array e coordenadas aninhadas',()=>{
   const x=ctx.payload({data:{source:'vivareal.com.br',items:[{
     id:'100',title:'Casa à venda',unitTypes:['HOME'],
@@ -161,5 +161,160 @@ test('Possível duplicidade de terrenos usa área total, sem criar área útil f
   city:'Salto de Pirapora',state:'SP',neighborhood:'Centro'};
  assert.equal(ctx.duplicate(maybe),true);
  assert.equal(ctx.reviewComparable({...maybe,link:'https://example.com/imovel'}).unitPrice,201000/251);
+ ctx.records.length=0;
+});
+
+test('Referência: cadastro aceita tipologias residenciais, rurais, comerciais e outras',()=>{
+ const base={city:'Salto de Pirapora',state:'SP',usable:120,total:450,tolerance:20};
+ const types=['house','two_story_house','condominium','apartment','flat','kitnet','penthouse',
+   'land','farm','commercial_room','warehouse','commercial_point'];
+ for(const type of types){
+   const r=ctx.makeReference({...base,type});
+   assert.equal(r.type,type);
+   assert.equal(r.city,'Salto de Pirapora');
+   assert.equal(r.state,'SP');
+ }
+ const other=ctx.makeReference({...base,type:'other',customType:'Pousada com lojas'});
+ assert.equal(other.customType,'Pousada com lojas');
+});
+test('Referência: exige município e UF e rejeita números / coordenadas inválidas',()=>{
+ const base={price:300000,type:'house',city:'Salto de Pirapora',state:'SP',usable:120,tolerance:20};
+ assert.throws(()=>ctx.makeReference({...base,city:''}),/município/i);
+ assert.throws(()=>ctx.makeReference({...base,state:'ZZ'}),/município/i);
+ assert.throws(()=>ctx.makeReference({...base,type:'other',customType:'X'}),/Descreva/);
+ assert.throws(()=>ctx.makeReference({...base,usable:-100}),/Área útil/);
+ assert.throws(()=>ctx.makeReference({...base,beds:2.5}),/Dormitórios/);
+ assert.throws(()=>ctx.makeReference({...base,tolerance:4}),/tolerância/i);
+ assert.throws(()=>ctx.makeReference({...base,tolerance:''}),/tolerância/i);
+ assert.throws(()=>ctx.makeReference({...base,lat:-23.5}),/latitude e longitude/i);
+ assert.throws(()=>ctx.makeReference({...base,lat:-96,lng:-47}),/coordenadas/i);
+ assert.throws(()=>ctx.makeReference({...base,radius:2}),/coordenadas conhecidas/i);
+});
+test('Comparação preliminar: casa com tipo, área e município aderentes, sem preço calculado',()=>{
+ const r=ctx.makeReference({type:'house',city:'Salto de Pirapora',state:'SP',usable:120,
+   neighborhood:'São Lucas',beds:3,tolerance:20});
+ const ad={price:300000,type:'house',city:'SALTO DE PIRAPÓRA',state:'SP',usable:130,
+   neighborhood:'São Lucas',beds:3,suites:null,baths:null,spaces:null,lat:null,lng:null};
+ const match=ctx.assessReference(r,ad);
+ assert.equal(match.status,'compatible');
+ assert.ok(match.positive.some(v=>v.includes('Metragem')));
+ assert.ok(!Object.hasOwn(match,'estimatedPrice'));
+ assert.ok(match.areaDeviation<9);
+ assert.equal(match.distanceKm,null);
+});
+test('Comparação preliminar: cidade ou tipologia divergente são incompatíveis',()=>{
+ const r=ctx.makeReference({type:'house',city:'Salto de Pirapora',state:'SP',usable:120});
+ const base={price:300000,type:'house',city:'Salto de Pirapora',state:'SP',usable:120,lat:null,lng:null};
+ assert.equal(ctx.assessReference(r,{...base,city:'Sorocaba'}).status,'incompatible');
+ assert.equal(ctx.assessReference(r,{...base,state:'PR'}).status,'incompatible');
+ assert.equal(ctx.assessReference(r,{...base,type:'land'}).status,'incompatible');
+ assert.equal(ctx.assessReference(r,{...base,type:'unknown'}).status,'insufficient');
+ assert.equal(ctx.assessReference(r,{...base,city:'—'}).status,'insufficient');
+});
+test('Comparação preliminar: área ausente não é inferida de área construída ou de terreno',()=>{
+ const r=ctx.makeReference({type:'house',city:'Salto de Pirapora',state:'SP',built:160,total:300});
+ const p={price:300000,type:'house',city:'Salto de Pirapora',state:'SP',usable:null,built:160,total:300};
+ const match=ctx.assessReference(r,p);
+ assert.equal(match.status,'insufficient');
+ assert.ok(match.issues.some(v=>v.includes('Informe a área útil')));
+ const provided=ctx.makeReference({type:'house',city:'Salto de Pirapora',state:'SP',usable:130});
+ assert.equal(ctx.assessReference(provided,p).status,'insufficient');
+});
+test('Comparação preliminar: terrenos e imóveis rurais comparam terreno, não área útil',()=>{
+ const ad={price:300000,type:'land',city:'Salto de Pirapora',state:'SP',total:990,usable:null,lat:null,lng:null};
+ const r=ctx.makeReference({type:'land',city:'Salto de Pirapora',state:'SP',total:1000});
+ assert.equal(ctx.assessReference(r,ad).status,'compatible');
+ const farm=ctx.makeReference({type:'farm',city:'Salto de Pirapora',state:'SP',total:20000});
+ assert.equal(ctx.assessReference(farm,{...ad,type:'farm',total:22000}).status,'compatible');
+ assert.equal(ctx.assessReference(farm,{...ad,type:'farm',total:null}).status,'insufficient');
+});
+test('Comparação preliminar: diferenças de metragem e subtipo geram revisão, não nota fictícia',()=>{
+ const r=ctx.makeReference({type:'kitnet',city:'Salto de Pirapora',state:'SP',usable:40});
+ const ad={price:300000,type:'apartment',city:'Salto de Pirapora',state:'SP',usable:41,lat:null,lng:null};
+ assert.equal(ctx.assessReference(r,ad).status,'review');
+ assert.equal(ctx.assessReference(r,{...ad,usable:120}).status,'review');
+ const condo=ctx.makeReference({type:'condominium',city:'Salto de Pirapora',state:'SP',usable:100});
+ assert.equal(ctx.assessReference(condo,{...ad,type:'house',usable:105}).status,'review');
+ const other=ctx.makeReference({type:'other',customType:'Pousada',city:'Salto de Pirapora',state:'SP',usable:100});
+ assert.equal(ctx.assessReference(other,{...ad,usable:100}).status,'insufficient');
+});
+test('Comparação geográfica: distância só calculada com coordenadas e raio escolhido',()=>{
+ const r=ctx.makeReference({type:'house',city:'Salto de Pirapora',state:'SP',usable:120,
+   lat:-23.65,lng:-47.58,radius:3,tolerance:20});
+ const ad={price:300000,type:'house',city:'Salto de Pirapora',state:'SP',usable:120,
+   lat:-23.65,lng:-47.58,approx:false};
+ const m=ctx.assessReference(r,ad);
+ assert.equal(m.status,'compatible');assert.equal(m.distanceKm,0);
+ assert.equal(ctx.assessReference(r,{...ad,lat:null,lng:null}).status,'insufficient');
+ assert.equal(ctx.assessReference(r,{...ad,lat:-23.3,lng:-47.58}).status,'review');
+ assert.equal(ctx.assessReference(r,{...ad,approx:true}).status,'review');
+});
+test('Classificação de fornecedores: não misturar flats, kitnets e sobrados com tipo principal',()=>{
+ assert.equal(ctx.classify({unitTypes:['FLAT']}),'flat');
+ assert.equal(ctx.classify({unitTypes:['KITNET']}),'kitnet');
+ assert.equal(ctx.classify({unitTypes:['TWO_STORY_HOUSE']}),'two_story_house');
+ assert.equal(ctx.classify({property:{type:'Ponto comercial'}}),'commercial_point');
+ assert.equal(ctx.classify({title:'Casa em Chácaras Parque Pirapora'}),'house');
+});
+
+test('Interface: salvar referência reclassifica registros, filtra e limpa sem descartar anúncios',()=>{
+ ctx.records.length=0;
+ const source='vivareal.com.br';
+ const same=ctx.normalized({
+   id:'reference-ui-1',unitTypes:['HOME'],title:'Casa de teste',
+   address:{city:'Salto de Pirapora',stateAcronym:'SP'},
+   attributes:{usableAreas:[120]},prices:[{businessType:'SALE',value:300000}]
+ },source);
+ const other=ctx.normalized({
+   id:'reference-ui-2',unitTypes:['HOME'],title:'Casa em outro município',
+   address:{city:'Sorocaba',stateAcronym:'SP'},
+   attributes:{usableAreas:[120]},prices:[{businessType:'SALE',value:300000}]
+ },source);
+ ctx.loadNormalized([same,other]);
+ el('ref-name').value='Casa referencial';
+ el('ref-type').value='house';
+ el('ref-city').value='Salto de Pirapora';
+ el('ref-state').value='SP';
+ el('ref-usable').value='120';
+ el('ref-tolerance').value='20';
+ el('reference-save').onclick();
+ assert.match(el('ref-summary').textContent,/Casa referencial/);
+ assert.equal(el('reference-filter').disabled,false);
+ el('reference-filter').value='compatible';
+ assert.deepEqual(Array.from(ctx.visibleRecords(),p=>p.id),['reference-ui-1']);
+ el('reference-filter').value='incompatible';
+ assert.deepEqual(Array.from(ctx.visibleRecords(),p=>p.id),['reference-ui-2']);
+ el('reference-clear').onclick();
+ assert.equal(el('reference-filter').disabled,true);
+ assert.equal(ctx.visibleRecords().length,2);
+ ctx.records.length=0;
+});
+
+test('Comparação preliminar: anúncio sem preço não recebe status de aderente',()=>{
+ const r=ctx.makeReference({type:'house',city:'Salto de Pirapora',state:'SP',usable:120});
+ const m=ctx.assessReference(r,{
+   type:'house',city:'Salto de Pirapora',state:'SP',usable:120,price:null,lat:null,lng:null
+ });
+ assert.equal(m.status,'insufficient');
+ assert.ok(m.issues.some(v=>v.includes('preço pedido')));
+});
+test('Códigos estruturados de tipologia são respeitados',()=>{
+ assert.equal(ctx.classify({propertyType:'commercial_point'}),'commercial_point');
+ assert.equal(ctx.classify({propertyType:'two_story_house'}),'two_story_house');
+ assert.equal(ctx.classify({propertyType:'condominium'}),'condominium');
+});
+
+test('Filtro local de área em terreno utiliza área total, nunca inventa área útil',()=>{
+ ctx.records.length=0;
+ const terrain=ctx.normalized({id:'area-land',unitTypes:['ALLOTMENT_LAND'],
+  prices:{mainValue:200000},attributes:{totalAreas:[250]},
+  address:{city:'Salto de Pirapora',state:'SP'}},'zapimoveis.com.br');
+ const house=ctx.normalized({id:'area-house',unitTypes:['HOME'],
+  prices:{mainValue:320000},attributes:{usableAreas:[90],totalAreas:[350]},
+  address:{city:'Salto de Pirapora',state:'SP'}},'zapimoveis.com.br');
+ ctx.loadNormalized([terrain,house]);
+ el('filter-area-min').value='200';
+ assert.deepEqual(Array.from(ctx.visibleRecords(),p=>p.id),['area-land']);
+ el('filter-area-min').value='';
  ctx.records.length=0;
 });
