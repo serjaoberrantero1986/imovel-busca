@@ -540,7 +540,7 @@ function renderGuidedSummary(){
     (referenceProfile?'<div style="margin-top:8px"><a href="#reference-panel">Revisar dados do meu imóvel ↑</a></div>':'')+'</div>';
   if(items.length){
     html+='<div class="guide-meta">Anúncios escolhidos ('+items.length+'). Valores abaixo são <strong>preços anunciados</strong>, não preços de venda ou avaliações.</div>';
-    for(const p of items){
+    for(const p of items.slice(0,12)){
       const outcome=referenceProfile?assessReference(referenceProfile,p):null;
       const review=reviewComparable(p);
       const issues=outcome?.issues??['Cadastre o imóvel de referência para comparar características.'];
@@ -558,6 +558,8 @@ function renderGuidedSummary(){
         '</div></div>';
     }
   }
+  if(items.length>12)html+='<p class="hint">Exibindo um resumo de 12 dos '+items.length+
+    ' anúncios selecionados. O indicativo considera todos os elegíveis.</p>';
   html+='<p class="hint"><strong>Importante:</strong> este resultado serve para escolher e conferir comparáveis. O indicador acima utiliza somente preços anunciados por m², sem ajustes técnicos de características. Não representa valor de mercado concluído, preço negociado ou PTAM.</p>';
   el.innerHTML=html;
 }
@@ -686,9 +688,38 @@ function drawMap(recenter=false){
   if(recenter&&located.length)map.fitBounds(L.latLngBounds(located.map(p=>[p.lat,p.lng])).pad(.16),{maxZoom:14});
 }
 if(map)map.on('click',event=>{center={lat:event.latlng.lat,lng:event.latlng.lng};drawMap(false);refresh();});
+function bulkSelectVisible(checked){
+  const visible=visibleRecords();
+  for(const p of visible){
+    if(checked)selected.add(p.key);
+    else selected.delete(p.key);
+  }
+  refresh();
+  report((checked?'Selecionados ':'Desmarcados ')+visible.length+
+    ' anúncios visíveis. Seleção não significa aprovação dos comparáveis; o indicativo ainda verifica a elegibilidade.');
+}
+function syncSelectionToolbar(visible){
+  const count=visible.filter(p=>selected.has(p.key)).length;
+  const all=visible.length>0&&count===visible.length;
+  const ticker=$('select-all-visible-toggle');
+  ticker.checked=all;
+  ticker.indeterminate=count>0&&!all;
+  ticker.disabled=!visible.length;
+  $('select-all-visible').disabled=!visible.length||all;
+  $('deselect-all-visible').disabled=!count;
+  $('deselect-all').disabled=!selected.size;
+  $('selection-counter').textContent=selected.size+' selecionado(s) no total · '+count+
+    ' de '+visible.length+' selecionado(s) entre os anúncios visíveis.';
+}
+$('select-all-visible').onclick=()=>bulkSelectVisible(true);
+$('deselect-all-visible').onclick=()=>bulkSelectVisible(false);
+$('deselect-all').onclick=()=>{selected.clear();refresh();report('Seleção de comparáveis limpa, sem apagar os anúncios ou o imóvel de referência.');};
+$('select-all-visible-toggle').onchange=event=>bulkSelectVisible(Boolean(event.target.checked));
+
 function renderCards() {
   const box = $('results'); box.replaceChildren();
   const visible = visibleRecords();
+  syncSelectionToolbar(visible);
   $('filter-status').textContent = visible.length + ' de ' + records.length + ' anúncios visíveis com os filtros atuais.'+(activeLocation?' Município: '+activeLocation.label+'.':'');
   if (!visible.length) {const el=document.createElement('p');el.className='muted';el.textContent='Nenhum anúncio corresponde aos filtros.';box.appendChild(el);}
   for (const p of visible) {
@@ -736,7 +767,9 @@ function renderCards() {
   renderMarkers();
 }
 function renderComparison() {
-  const arr=records.filter(p=>selected.has(p.key)), container=$('comparison');$('export-btn').disabled=arr.length<2;
+  const all=records.filter(p=>selected.has(p.key));
+  const arr=all.slice(0,18),container=$('comparison');
+  $('export-btn').disabled=all.length<2;
   if(!arr.length){container.textContent='Selecione os anúncios na lista para comparar suas características.';return;}
   const attrs=[['Fonte','source'],['Tipo de imóvel','type'],
     ...(referenceProfile?[['Semelhança com imóvel de referência','referenceMatch']]:[]),
@@ -757,7 +790,9 @@ function renderComparison() {
     if(checks.some(c=>c.status==='insufficient'))cautions.push('Algumas comparações têm dados essenciais ausentes.');
     if(checks.some(c=>c.status==='review'))cautions.push('Existem diferenças relevantes a verificar frente à referência.');
   }
-  container.innerHTML=html+'</tbody></table>'+
+  container.innerHTML=(all.length>18?'<p class="hint">Para manter a tela rápida, a tabela detalhada mostra apenas os primeiros 18 dos '+all.length+
+    ' anúncios selecionados. O indicativo e a exportação consideram todos os selecionados elegíveis.</p>':'')+
+    html+'</tbody></table>'+
     '<p class="hint">Triagem preliminar: '+safe(cautions.join(' ')||'Campos essenciais presentes; confirme os anúncios, localização e homogeneidade.')+
     ' Preços anunciados não representam preços efetivos de venda. Nenhuma avaliação ou PTAM é calculado.</p>';
 }
