@@ -178,7 +178,7 @@ test('Referência: cadastro aceita tipologias residenciais, rurais, comerciais e
  assert.equal(other.customType,'Pousada com lojas');
 });
 test('Referência: exige município e UF e rejeita números / coordenadas inválidas',()=>{
- const base={type:'house',city:'Salto de Pirapora',state:'SP',usable:120,tolerance:20};
+ const base={price:300000,type:'house',city:'Salto de Pirapora',state:'SP',usable:120,tolerance:20};
  assert.throws(()=>ctx.makeReference({...base,city:''}),/município/i);
  assert.throws(()=>ctx.makeReference({...base,state:'ZZ'}),/município/i);
  assert.throws(()=>ctx.makeReference({...base,type:'other',customType:'X'}),/Descreva/);
@@ -193,7 +193,7 @@ test('Referência: exige município e UF e rejeita números / coordenadas invál
 test('Comparação preliminar: casa com tipo, área e município aderentes, sem preço calculado',()=>{
  const r=ctx.makeReference({type:'house',city:'Salto de Pirapora',state:'SP',usable:120,
    neighborhood:'São Lucas',beds:3,tolerance:20});
- const ad={type:'house',city:'SALTO DE PIRAPÓRA',state:'SP',usable:130,
+ const ad={price:300000,type:'house',city:'SALTO DE PIRAPÓRA',state:'SP',usable:130,
    neighborhood:'São Lucas',beds:3,suites:null,baths:null,spaces:null,lat:null,lng:null};
  const match=ctx.assessReference(r,ad);
  assert.equal(match.status,'compatible');
@@ -204,7 +204,7 @@ test('Comparação preliminar: casa com tipo, área e município aderentes, sem 
 });
 test('Comparação preliminar: cidade ou tipologia divergente são incompatíveis',()=>{
  const r=ctx.makeReference({type:'house',city:'Salto de Pirapora',state:'SP',usable:120});
- const base={type:'house',city:'Salto de Pirapora',state:'SP',usable:120,lat:null,lng:null};
+ const base={price:300000,type:'house',city:'Salto de Pirapora',state:'SP',usable:120,lat:null,lng:null};
  assert.equal(ctx.assessReference(r,{...base,city:'Sorocaba'}).status,'incompatible');
  assert.equal(ctx.assessReference(r,{...base,state:'PR'}).status,'incompatible');
  assert.equal(ctx.assessReference(r,{...base,type:'land'}).status,'incompatible');
@@ -213,7 +213,7 @@ test('Comparação preliminar: cidade ou tipologia divergente são incompatívei
 });
 test('Comparação preliminar: área ausente não é inferida de área construída ou de terreno',()=>{
  const r=ctx.makeReference({type:'house',city:'Salto de Pirapora',state:'SP',built:160,total:300});
- const p={type:'house',city:'Salto de Pirapora',state:'SP',usable:null,built:160,total:300};
+ const p={price:300000,type:'house',city:'Salto de Pirapora',state:'SP',usable:null,built:160,total:300};
  const match=ctx.assessReference(r,p);
  assert.equal(match.status,'insufficient');
  assert.ok(match.issues.some(v=>v.includes('Informe a área útil')));
@@ -221,7 +221,7 @@ test('Comparação preliminar: área ausente não é inferida de área construí
  assert.equal(ctx.assessReference(provided,p).status,'insufficient');
 });
 test('Comparação preliminar: terrenos e imóveis rurais comparam terreno, não área útil',()=>{
- const ad={type:'land',city:'Salto de Pirapora',state:'SP',total:990,usable:null,lat:null,lng:null};
+ const ad={price:300000,type:'land',city:'Salto de Pirapora',state:'SP',total:990,usable:null,lat:null,lng:null};
  const r=ctx.makeReference({type:'land',city:'Salto de Pirapora',state:'SP',total:1000});
  assert.equal(ctx.assessReference(r,ad).status,'compatible');
  const farm=ctx.makeReference({type:'farm',city:'Salto de Pirapora',state:'SP',total:20000});
@@ -230,7 +230,7 @@ test('Comparação preliminar: terrenos e imóveis rurais comparam terreno, não
 });
 test('Comparação preliminar: diferenças de metragem e subtipo geram revisão, não nota fictícia',()=>{
  const r=ctx.makeReference({type:'kitnet',city:'Salto de Pirapora',state:'SP',usable:40});
- const ad={type:'apartment',city:'Salto de Pirapora',state:'SP',usable:41,lat:null,lng:null};
+ const ad={price:300000,type:'apartment',city:'Salto de Pirapora',state:'SP',usable:41,lat:null,lng:null};
  assert.equal(ctx.assessReference(r,ad).status,'review');
  assert.equal(ctx.assessReference(r,{...ad,usable:120}).status,'review');
  const condo=ctx.makeReference({type:'condominium',city:'Salto de Pirapora',state:'SP',usable:100});
@@ -241,7 +241,7 @@ test('Comparação preliminar: diferenças de metragem e subtipo geram revisão,
 test('Comparação geográfica: distância só calculada com coordenadas e raio escolhido',()=>{
  const r=ctx.makeReference({type:'house',city:'Salto de Pirapora',state:'SP',usable:120,
    lat:-23.65,lng:-47.58,radius:3,tolerance:20});
- const ad={type:'house',city:'Salto de Pirapora',state:'SP',usable:120,
+ const ad={price:300000,type:'house',city:'Salto de Pirapora',state:'SP',usable:120,
    lat:-23.65,lng:-47.58,approx:false};
  const m=ctx.assessReference(r,ad);
  assert.equal(m.status,'compatible');assert.equal(m.distanceKm,0);
@@ -288,4 +288,18 @@ test('Interface: salvar referência reclassifica registros, filtra e limpa sem d
  assert.equal(el('reference-filter').disabled,true);
  assert.equal(ctx.visibleRecords().length,2);
  ctx.records.length=0;
+});
+
+test('Comparação preliminar: anúncio sem preço não recebe status de aderente',()=>{
+ const r=ctx.makeReference({type:'house',city:'Salto de Pirapora',state:'SP',usable:120});
+ const m=ctx.assessReference(r,{
+   type:'house',city:'Salto de Pirapora',state:'SP',usable:120,price:null,lat:null,lng:null
+ });
+ assert.equal(m.status,'insufficient');
+ assert.ok(m.issues.some(v=>v.includes('preço pedido')));
+});
+test('Códigos estruturados de tipologia são respeitados',()=>{
+ assert.equal(ctx.classify({propertyType:'commercial_point'}),'commercial_point');
+ assert.equal(ctx.classify({propertyType:'two_story_house'}),'two_story_house');
+ assert.equal(ctx.classify({propertyType:'condominium'}),'condominium');
 });
