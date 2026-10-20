@@ -684,7 +684,7 @@ test('Execução multifonte mantém origem, cidade auditada, erros isolados e um
 });
 test('Execução multifonte interrompe próximas chamadas ao receber HTTP 429',async()=>{
  const plans=ctx.planMixedSearch({target:'zapimoveis.com.br',type:'plp',
-   city:'Salto de Pirapora',state:'SP'},
+   city:'Salto de Pirapora',state:'SP',page:1,businessType:'sale'},
    ['zapimoveis.com.br','vivareal.com.br','olx.com.br']);
  let calls=0;
  const results=await ctx.executeMixedSearch(plans,async()=>{
@@ -701,7 +701,7 @@ test('Pesquisa multifonte agrega anúncios sem CSV e mantém um único total por
  el('city').value='Salto de Pirapora';el('state').value='SP';
  el('result-type').value='';el('min-beds').value='';
  const plans=ctx.planMixedSearch({target:'zapimoveis.com.br',type:'plp',
-   city:'Salto de Pirapora',state:'SP',page:1},
+   city:'Salto de Pirapora',state:'SP',page:1,businessType:'sale'},
    ['zapimoveis.com.br','vivareal.com.br']);
  const answer=await ctx.performMixedSearch(plans,async q=>({
    data:{source:q.target,totalResults:195,locationAudit:{providerItems:1,acceptedItems:1,
@@ -769,4 +769,16 @@ test('Suposta duplicidade entre portais exige informações coerentes e nunca ex
  assert.equal(ctx.suspectedCrossPortalRepeat(a,{...b,neighborhood:'—'}),false);
  assert.equal(ctx.suspectedCrossPortalRepeat(a,{...b,price:400000}),false);
  assert.equal(ctx.suspectedCrossPortalRepeat(a,{...b,source:'zapimoveis.com.br'}),false);
+});
+
+test('Pesquisa mista barra filtros inválidos antes de consumir créditos',()=>{
+ const base={target:'zapimoveis.com.br',type:'plp',city:'Salto de Pirapora',
+   state:'SP',page:1,businessType:'sale'};
+ const targets=['zapimoveis.com.br'];
+ assert.throws(()=>ctx.planMixedSearch({...base,page:0},targets),/página/);
+ assert.throws(()=>ctx.planMixedSearch({...base,priceMin:400000,priceMax:200000},targets),/preço mínimo/);
+ assert.throws(()=>ctx.planMixedSearch({...base,areaMin:300,areaMax:100},targets),/área mínima/);
+ assert.throws(()=>ctx.planMixedSearch({...base,priceMin:-1},targets),/valores de preço e área/);
+ assert.throws(()=>ctx.planMixedSearch({...base,businessType:'unknown'},targets),/venda ou aluguel/);
+ assert.throws(()=>ctx.planMixedSearch({...base,propertyType:'other'},targets),/tipologia compatível/);
 });
