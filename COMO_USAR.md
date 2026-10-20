@@ -1,6 +1,20 @@
 # Imóvel Busca — laboratório independente
 Este repositório **não** conecta ao Web Imóveis, Supabase ou domínio de produção. Não contém anúncios fictícios e não calcula valor de mercado/PTAM.
 
+## Triagem automática por padrão (sem selecionar anúncios um a um)
+
+A partir desta versão, **todo anúncio novo importado do CSV, JSON ou GeckoAPI é automaticamente selecionado para TRIAGEM**, desde que o checkbox **Incluir automaticamente todos os novos anúncios na triagem** permaneça marcado (ativado por padrão). Isso não significa aprovação ou inclusão no indicativo: o sistema calcula a elegibilidade de cada anúncio e apresenta **Aproveitados**, **Para confirmar dados** e **Fora do cálculo**, com motivo específico e link original, quando disponível.
+
+- **Aproveitados**: anúncios do mesmo município/UF e tipologia, com preço, área da categoria pertinente e metragem dentro da tolerância, sem coincidências exatas ou suspeitas graves. O indicativo continua sendo baseado em ofertas, sem homogeneização.
+- **Fora do cálculo**: outros municípios/tipos incompatíveis, aluguel, área fora da tolerância, duplicidades exatas. O anúncio continua na lista e no CSV opcional.
+- **Para confirmar dados**: sem dados essenciais, tipologia parecida porém não equivalente, possível anúncio repetido entre portais e áreas contraditórias (área útil maior que área total). O motor NÃO imputa silenciosamente área útil a partir de metragem textual, área construída ou área de terreno; o texto extraído é mostrado apenas como indício.
+
+A lista de motivos pode ser filtrada; os primeiros **25 resultados** aparecem, e **Mostrar mais anúncios** revela outros. Cards são renderizados em lotes de **40** para melhorar a velocidade, porém seleção em massa e cálculo consideram todos os registros filtrados/selecionados e não apenas os 40 visíveis na tela. Ao desmarcar manualmente um registro, sua seleção é preservada em atualizações do mesmo ID/fonte; novos IDs continuam sendo selecionados automaticamente enquanto o checkbox permanecer ligado.
+
+**Limite fundamental**: a triagem é uma regra de qualidade de dados, não a validação técnica final de PTAM. Indícios de área não especificada, contradições de campos, fotos ou títulos ambíguos pedem inspeção de outras evidências; não se pode aumentar artificialmente o número de comparáveis aprovados. O profissional pode retirar anúncios da amostra e futuramente confirmar/corrigir atributos com registro de evidências. A pesquisa e seus filtros estão sujeitos às condições dos portais e à auditoria de município/UF.
+
+**IA visual no futuro**: modelos abertos para análise de fotos podem rodar num worker próprio, inicialmente como auxílio à conferência de benfeitorias visíveis. Antes da integração, confirmar licenças e direitos de uso de fotos, testar precisão com conjunto de imagens rotuladas e medir custo da infraestrutura (modelo sem tarifa de API não significa custo operacional zero). A Vercel hospeda o laboratório web, mas não equivale a disponibilizar servidor GPU para inferência local gratuitamente. Nenhuma classificação visual pode fornecer fator de preço sem validação quantitativa apropriada.
+
 ## Seleção em massa de anúncios e campos encontrados nos textos
 
 O **ticker de seleção** fica imediatamente acima dos **cards de imóveis** (e não na seleção dos fornecedores): marque **Selecionar os imóveis visíveis**, clique **Selecionar todos os visíveis**, **Desmarcar todos os visíveis** ou **Limpar toda a seleção**. O contador mostra quantos imóveis estão selecionados na sessão e quantos deles correspondem aos filtros atuais. Um anúncio oculto por filtro permanece selecionado até ser removido explicitamente. A seleção **não** significa que o imóvel foi aprovado como comparável.
