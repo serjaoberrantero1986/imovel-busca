@@ -1,6 +1,18 @@
 # Imóvel Busca — laboratório independente
 Este repositório **não** conecta ao Web Imóveis, Supabase ou domínio de produção. Não contém anúncios fictícios e não calcula valor de mercado/PTAM.
 
+## Conferência assistida dos anúncios (sem IA visual nesta etapa)
+
+O objetivo desta fase é **reduzir o número de verificações manuais**, não eliminar a responsabilidade do corretor. A triagem inicial continua automática. Para anúncios pendentes, clique **Conferir dados** na lista de razões ou **Conferir/corrigir dados** no card de imóvel. A tela abre um formulário único com os números atuais, indícios numéricos do título/descrição e, se disponível, o link ao anúncio original.
+
+- É possível corrigir preço pedido, área útil, área total/terreno, dormitórios, suítes, banheiros e vagas. **Não é possível alterar cidade/UF/tipologia nesse formulário**, pois essas correções precisam de uma checagem de identidade do imóvel separada.
+- O operador escolhe a **origem da conferência**: anúncio completo, título, descrição, documento/ficha do imóvel ou responsável pelo anúncio. Uma justificativa com pelo menos 12 caracteres é obrigatória. Se o operador informa que a origem é apenas título/descrição, só pode atribuir uma metragem à área útil ou área total quando o texto identifica **explicitamente** a categoria da medida; menção genérica a 120 m² não basta. Quantidades também devem estar explicitamente mencionadas.
+- Cada alteração mantém valor anterior, novo valor, campo, origem declarada, justificativa e horário de sessão. O botão **Restaurar dados originais** reverte os campos numéricos ao estado observado antes da primeira correção e registra essa ação; não elimina a trilha de alterações.
+- Correções ficam só no navegador e prevalecem sobre uma eventual consulta posterior ao mesmo ID/fonte na sessão; divergência entre dado atualizado da API e dado revisado fica sinalizada ao abrir a conferência. A triagem e o indicativo preliminar são recalculados após salvar/restaurar. A recuperação de dados por PDP continua sujeita a confirmação explícita e créditos da API.
+- CSV opcional preserva a trilha de alterações na coluna `reviewHistory`, além dos dados corrigidos. Ao **reimportar** o CSV, os números corrigidos são recuperados, porém o histórico é marcado como **não autenticado** e não constitui assinatura ou homologação profissional. CSVs antigos continuam aceitos.
+
+**Não são validados automaticamente:** autoria da revisão, veracidade do anúncio, integridade de documentos, estado de conservação ou vínculo da pessoa com CRECI/CNAI. A classificação automática não torna a avaliação formal/PTAM. Não se deve assumir que corrigir um campo significa aprovar definitivamente o anúncio. A futura etapa de dossiê deverá exigir autenticação de profissional, anexos e trilha de auditoria persistente. Nenhum serviço de IA é utilizado neste MVP.
+
 ## Triagem automática por padrão (sem selecionar anúncios um a um)
 
 A partir desta versão, **todo anúncio novo importado do CSV, JSON ou GeckoAPI é automaticamente selecionado para TRIAGEM**, desde que o checkbox **Incluir automaticamente todos os novos anúncios na triagem** permaneça marcado (ativado por padrão). Isso não significa aprovação ou inclusão no indicativo: o sistema calcula a elegibilidade de cada anúncio e apresenta **Aproveitados**, **Para confirmar dados** e **Fora do cálculo**, com motivo específico e link original, quando disponível.
