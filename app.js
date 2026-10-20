@@ -485,6 +485,8 @@ function renderOfferIndicator(){
   if(stats.status!=='ready'){
     host.innerHTML='<div class="offer-empty"><div class="offer-kicker">Indicativo preliminar na tela</div>'+
       '<h3>Aguardando dados para estimar</h3><p>'+safe(stats.reasons.join(' '))+'</p>'+
+      (stats.excluded.length?'<details class="offer-details"><summary>Por que alguns anúncios não entraram no cálculo ('+
+        stats.excluded.length+')</summary><ul>'+stats.excluded.map(x=>'<li>'+safe(x.label)+' — '+safe(x.reason)+'</li>').join('')+'</ul></details>':'')+
       '<p class="offer-note">Não é necessário exportar CSV para obter um resultado.</p></div>';
     return;
   }
@@ -827,6 +829,7 @@ function parseExportCsv(raw){
       source,id:id||link,key:source+':'+(id||link),type,
       offerPurpose:inferOfferPurpose({...row,link}),
       collectedAt:typeof row.collectedAt==='string'&&/^\d{4}-\d\d-\d\dT/.test(row.collectedAt)?row.collectedAt:'',
+      searchCriteria:typeof row.searchCriteria==='string'?row.searchCriteria.trim().slice(0,2500):'',
       requestId:typeof row.requestId==='string'?row.requestId.trim().slice(0,150):'',
       executionId:typeof row.executionId==='string'?row.executionId.trim().slice(0,150):'',
       title:bestTitle({title:row.title,neighborhood},type,{neighborhood:neighborhood==='—'?'':neighborhood}),
@@ -1124,8 +1127,12 @@ async function executeMixedSearch(plans,fetcher,onUpdate=()=>{}){
           canon(p.city)===canon(query.city)&&uf(p.state)===uf(query.state));
         current.accepted=current.items.length;
         current.discarded=Math.max(0,(audit?.providerItems??data.items.length)-current.accepted);
+        const criteria={...query};
+        // São apenas filtros da busca; senha do laboratório e token GeckoAPI
+        // nunca entram na requisição serializada ou na exportação.
         current.items=current.items.map(p=>({
           ...p,collectedAt:current.collectedAt,
+          searchCriteria:JSON.stringify(criteria),
           requestId:current.requestId,executionId:current.executionId
         }));
         current.state='done';
@@ -1299,7 +1306,7 @@ for(const id of ['in-radius','min-beds','dedupe','result-type','quality-filter',
 }
 $('export-btn').onclick=()=>{
   const picked=records.filter(p=>selected.has(p.key));if(picked.length<2)return;
-  const fields=['source','id','type','offerPurpose','collectedAt','requestId','executionId','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser',
+  const fields=['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser',
     'ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_area_m2','ref_area_tolerance_percent','ref_status','ref_reasons'];
   const derived=p=>{
     const r=referenceProfile,m=assessReference(r,p),land=r&&['land','farm'].includes(r.type);
@@ -1312,7 +1319,7 @@ $('export-btn').onclick=()=>{
       ref_reasons:m?.issues.join(' | ')??''
     };
   };
-  const formulaSensitive=new Set(['source','id','type','offerPurpose','collectedAt','requestId','executionId','title','link','neighborhood','city','state','advertiser','ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_status','ref_reasons']);
+  const formulaSensitive=new Set(['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','title','link','neighborhood','city','state','advertiser','ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_status','ref_reasons']);
   const csvValue=(key,value)=>{
     const raw=String(value??'');
     // Protege a abertura do CSV em planilhas contra fórmulas injetadas em
