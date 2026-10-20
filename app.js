@@ -140,7 +140,7 @@ function extractTextEvidence(title,description=''){
       const value=Number(match[1].replace(',','.'));
       if(!Number.isFinite(value)||value<=0||value>100000)continue;
       const left=canon(raw.slice(Math.max(0,match.index-28),match.index));
-      const right=canon(raw.slice(match.index+match[0].length,match.index+match[0].length+26));
+      const right=canon(raw.slice(match.index+match[0].length,match.index+match[0].length+26)).trim();
       const nearby=(right.match(/^(?:de )?(?:area )?(?:util|privativa|construida|total|terreno|lote)\b/)?.[0]||
         left.match(/(?:area )?(?:util|privativa|construida|total|terreno|lote)(?: de)?\s*$/)?.[0]||'');
       const kind=/\b(util|privativa)\b/.test(nearby)?'útil/privativa':
