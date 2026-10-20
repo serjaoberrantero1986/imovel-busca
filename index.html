@@ -53,6 +53,32 @@
 .title-evidence{display:flex;flex-wrap:wrap;align-items:center;gap:7px;font-size:11px;color:#6c5840;background:#fff9f0;border:1px solid #f1e2c9;border-radius:9px;padding:8px 10px;margin-top:5px;line-height:1.5}
 .title-evidence strong{color:#735523}
 @media(max-width:620px){.selection-actions{display:grid;grid-template-columns:1fr 1fr}.selection-actions button:last-child{grid-column:span 2}.selection-heading{display:grid}}
+
+.selection-auto{padding:8px 10px;margin-bottom:12px;background:#eef7f3;border:1px solid #d4e9df;border-radius:10px;font-size:13px;color:#1d5844}
+.selection-auto strong{font-weight:780}
+.eligibility-panel{background:#fff;border:1px solid #dce5ef;border-radius:14px;padding:15px;margin-top:15px}
+.eligibility-heading{display:flex;align-items:start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.eligibility-heading h3{font-size:15px;color:#263d57;margin:0 0 4px}
+.eligibility-heading .hint{margin:0;max-width:540px}
+.eligibility-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:14px}
+.eligibility-metric{display:grid;gap:4px;background:#f7f9fc;border:1px solid #e5eaf0;border-radius:11px;padding:11px}
+.eligibility-metric strong{font-size:25px;font-variant-numeric:tabular-nums;color:#2c435a}
+.eligibility-metric small{color:#6c7f93;font-size:11px;line-height:1.45}
+.eligibility-metric.included{background:#eef8f2}.eligibility-metric.pending{background:#fff8e9}.eligibility-metric.excluded{background:#fff2f1}
+.eligibility-details{margin-top:14px;border-top:1px solid #e5ebf2;padding-top:13px}
+.eligibility-details>summary{cursor:pointer;font-weight:800;color:#304a64;font-size:13px}
+.eligibility-actions{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin:13px 0}
+.eligibility-actions .field{min-width:240px;max-width:340px}
+.eligibility-list{display:grid;gap:7px}
+.eligibility-line{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 13px;padding:10px;border:1px solid #e1e8f0;border-radius:10px;background:#fafbfd;font-size:12px}
+.eligibility-line strong{color:#28415b;overflow-wrap:anywhere}
+.eligibility-line p{margin:4px 0 0;color:#68798b;line-height:1.45}
+.eligibility-line .reason{grid-column:1/-1;font-size:12px;color:#605d5d;line-height:1.5}
+.eligibility-line .reason strong{color:#585450}
+.eligibility-line .status{font-size:11px;font-weight:750;background:transparent;padding:0;border:0}
+.eligibility-line .status.included{color:#287045}.eligibility-line .status.pending{color:#956422}.eligibility-line .status.excluded{color:#ad3f3f}
+#eligibility-more{margin-top:12px}
+@media(max-width:620px){.eligibility-overview{grid-template-columns:1fr 1fr}.eligibility-line{grid-template-columns:1fr}.eligibility-panel{padding:12px}}
 </style></head>
 <body>
 <header><div class="top"><div><div class="logo">⌖ Imóvel <b>Busca</b></div><small>Laboratório independente de pesquisa e comparação</small></div><span class="eyebrow">AMBIENTE EXPERIMENTAL</span></div></header>
@@ -206,9 +232,30 @@
 <section class="panel guided-panel" id="guided-panel" aria-labelledby="guided-title">
   <div class="guided-head">
     <div><h2 id="guided-title">3. Veja seu indicativo de valor</h2>
-      <p class="hint">O valor aparece automaticamente quando você seleciona pelo menos dois anúncios aproveitáveis. Não precisa exportar um arquivo.</p>
+      <p class="hint">O laboratório inclui todos os anúncios automaticamente e filtra quais são aproveitáveis no cálculo. Você pode revisar e ajustar a seleção nos cards.</p>
     </div>
   </div>
+  <section class="eligibility-panel" aria-labelledby="eligibility-heading">
+    <div class="eligibility-heading"><div>
+      <h3 id="eligibility-heading">Limpeza automática da amostra</h3>
+      <p class="hint">O sistema testa todos os anúncios selecionados. Nem toda oferta é aproveitável, e as exclusões ficam documentadas.</p>
+    </div><span id="eligibility-summary" class="muted" aria-live="polite">Aguardando anúncios.</span></div>
+    <div id="eligibility-overview" class="eligibility-overview"></div>
+    <details id="eligibility-panel" class="eligibility-details" open>
+      <summary>Ver quais anúncios entraram e por que outros não entraram</summary>
+      <div class="eligibility-actions">
+        <label class="field">Mostrar resultados<select id="eligibility-filter">
+          <option value="all">Todos os analisados</option>
+          <option value="included">Aproveitados no cálculo</option>
+          <option value="pending">Dependem de confirmação</option>
+          <option value="excluded">Excluídos pelos critérios</option>
+        </select></label>
+        <span class="muted" id="eligibility-visible-count">0 anúncios</span>
+      </div>
+      <div id="eligibility-list" class="eligibility-list"></div>
+      <button id="eligibility-more" type="button" class="secondary hidden">Mostrar mais anúncios</button>
+    </details>
+  </section>
   <div id="offer-indicator" class="offer-indicator" aria-live="polite" aria-atomic="true">
     <div class="offer-empty"><h3>Aguardando anúncios</h3><p>Selecione imóveis para comparar.</p></div>
   </div>
@@ -239,8 +286,11 @@
 <p class="hint">Filtros de metragem usam área total para terrenos e imóveis rurais e área útil para os demais. Anúncios sem essa área são excluídos apenas quando o filtro de metragem está ativo.</p></details>
 <p id="filter-status" class="muted" style="margin:0 0 12px"></p>
 <div class="selection-toolbar" aria-label="Selecionar anúncios comparáveis">
+  <label class="inline selection-auto"><input id="auto-select-new" type="checkbox" checked>
+    <strong>Incluir automaticamente todos os novos anúncios na triagem</strong>
+  </label>
   <div class="selection-heading">
-    <strong>Selecionar anúncios para comparação</strong>
+    <strong>Revisar a seleção manualmente (opcional)</strong>
     <span id="selection-counter" class="muted" aria-live="polite">0 selecionados de 0 exibidos</span>
   </div>
   <div class="selection-actions">
@@ -249,7 +299,7 @@
     <button id="deselect-all-visible" class="secondary" type="button">Desmarcar todos os visíveis</button>
     <button id="deselect-all" class="secondary" type="button">Limpar toda a seleção</button>
   </div>
-  <p class="hint">Esses controles selecionam os <strong>imóveis</strong>, não os portais. Filtros ativos definem quais anúncios estão visíveis. Selecionar não significa aprovar o imóvel para o cálculo.</p>
+  <p class="hint">Novos anúncios são selecionados por padrão para <strong>triagem automática</strong>. A análise separa os elegíveis dos excluídos e dos que exigem confirmação. Você pode desmarcar qualquer imóvel; filtros determinam o conjunto visível e não apagam sua seleção.</p>
 </div>
 <div class="result-scroll" id="results"><p class="muted">Os resultados aparecerão aqui.</p></div>
 </section>
