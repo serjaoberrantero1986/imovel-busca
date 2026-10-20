@@ -389,10 +389,27 @@ function indicatorSimilarListing(a,b){
   if(aLink&&bLink&&aLink===bLink)return true;
   return false;
 }
+
+function suspectedCrossPortalRepeat(a,b){
+  // Apenas suspeita de mesma unidade, não prova identidade do imóvel.
+  if(!a||!b||a.source===b.source||a.type==='unknown'||a.type!==b.type)return false;
+  if(!a.neighborhood||a.neighborhood==='—'||!b.neighborhood||b.neighborhood==='—')return false;
+  if(canon(a.city)!==canon(b.city)||uf(a.state)!==uf(b.state)||
+     canon(a.neighborhood)!==canon(b.neighborhood))return false;
+  const areaA=areaForLocalComparison(a),areaB=areaForLocalComparison(b);
+  if(!Number.isFinite(areaA)||areaA<=0||!Number.isFinite(areaB)||areaB<=0||
+     !Number.isFinite(a.price)||a.price<=0||!Number.isFinite(b.price)||b.price<=0)return false;
+  for(const key of ['beds','suites','baths','spaces']){
+    if(Number.isFinite(a[key])&&Number.isFinite(b[key])&&a[key]!==b[key])return false;
+  }
+  return Math.abs(areaA-areaB)/Math.max(areaA,areaB)<=.03&&
+    Math.abs(a.price-b.price)/Math.max(a.price,b.price)<=.02;
+}
+
 function computeOfferIndicator(reference,chosen){
   const list=Array.isArray(chosen)?chosen:[];
   const base={status:'unavailable',value:null,low:null,high:null,unitMedian:null,
-    area:null,areaLabel:'',included:[],excluded:[],selectedCount:list.length,
+    area:null,areaLabel:'',included:[],excluded:[],suspectedDuplicates:[],selectedCount:list.length,
     reliability:'Não calculável',reasons:[]};
   if(!reference)return {...base,reasons:['Cadastre o imóvel de referência antes de calcular o indicativo.']};
   if(reference.type==='other')return {...base,reasons:['Tipologia personalizada: valide equivalência dos anúncios manualmente antes de estimar valores.']};
@@ -425,6 +442,11 @@ function computeOfferIndicator(reference,chosen){
     if(result.included.some(other=>indicatorSimilarListing(p,other.item))){
       issue('Mesmo anúncio encontrado mais de uma vez.');continue;
     }
+    const likelyRepeated=result.included.find(other=>suspectedCrossPortalRepeat(p,other.item));
+    if(likelyRepeated){
+      result.suspectedDuplicates.push({key:p.key,otherKey:likelyRepeated.key});
+      issue('Possível duplicidade com outra fonte ('+likelyRepeated.item.source+'). Excluído preventivamente do indicativo até conferência manual.');continue;
+    }
     result.included.push({item:p,key:p.key||null,label,area:pArea,ask:p.price,
       unit:p.price/pArea,normalized:(p.price/pArea)*area,
       warnings:review.issues.slice(0,5)});
@@ -450,6 +472,8 @@ function computeOfferIndicator(reference,chosen){
   if(spread>0.3)result.reasons.push('Dispersão dos preços por m² superior a 30% da mediana.');
   if(result.excluded.length)
     result.reasons.push(result.excluded.length+' anúncio(s) selecionado(s) não entraram no cálculo.');
+  if(result.suspectedDuplicates.length)
+    result.reasons.push('Possíveis anúncios repetidos em portais diferentes não foram contados em duplicidade. A semelhança não prova que sejam o mesmo imóvel; a conferência pode alterar a amostra.');
   result.reasons.push('Preços pedidos não equivalem a valores efetivos de transação.');
   return result;
 }
@@ -674,6 +698,8 @@ function renderCards() {
     const refClass=match?.status==='compatible'?'quality-ok':match?.status==='review'?'quality-warn':'quality-missing';
     card.innerHTML =
       '<div class="row between"><span class="pill">'+safe(p.source)+'</span><span class="muted">'+(validPoint(p)?(p.approx?'📍 Aproximada':'📍 Não certificada'):'Sem coordenadas')+'</span></div>'+
+      (p.collectedAt?'<span class="muted">Coletado em '+safe(p.collectedAt.slice(0,10))+
+       (p.requestId?' · Consulta '+safe(p.requestId):'')+'</span>':'')+
       '<h3>'+safe(p.title)+'</h3><div class="row"><span class="pill orange">'+safe(typeLabel[p.type]||'A classificar')+'</span><span class="pill '+reviewClass+'">'+safe(qualityLabels[review.status])+'</span></div>'+
       (match?'<div class="reference-result"><span class="pill '+refClass+'">Referência: '+safe(referenceLabels[match.status])+'</span>'+
         (match.distanceKm!==null?' <span class="muted">'+safe(match.distanceKm.toFixed(1))+' km do imóvel de referência</span>':'')+
@@ -800,6 +826,9 @@ function parseExportCsv(raw){
     const record={
       source,id:id||link,key:source+':'+(id||link),type,
       offerPurpose:inferOfferPurpose({...row,link}),
+      collectedAt:typeof row.collectedAt==='string'&&/^\d{4}-\d\d-\d\dT/.test(row.collectedAt)?row.collectedAt:'',
+      requestId:typeof row.requestId==='string'?row.requestId.trim().slice(0,150):'',
+      executionId:typeof row.executionId==='string'?row.executionId.trim().slice(0,150):'',
       title:bestTitle({title:row.title,neighborhood},type,{neighborhood:neighborhood==='—'?'':neighborhood}),
       link,price:number(row.price),usable:number(row.usable),total:number(row.total),
       beds:number(row.beds),suites:number(row.suites),baths:number(row.baths),
@@ -1270,7 +1299,7 @@ for(const id of ['in-radius','min-beds','dedupe','result-type','quality-filter',
 }
 $('export-btn').onclick=()=>{
   const picked=records.filter(p=>selected.has(p.key));if(picked.length<2)return;
-  const fields=['source','id','type','offerPurpose','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser',
+  const fields=['source','id','type','offerPurpose','collectedAt','requestId','executionId','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser',
     'ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_area_m2','ref_area_tolerance_percent','ref_status','ref_reasons'];
   const derived=p=>{
     const r=referenceProfile,m=assessReference(r,p),land=r&&['land','farm'].includes(r.type);
@@ -1283,7 +1312,7 @@ $('export-btn').onclick=()=>{
       ref_reasons:m?.issues.join(' | ')??''
     };
   };
-  const formulaSensitive=new Set(['source','id','type','offerPurpose','title','link','neighborhood','city','state','advertiser','ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_status','ref_reasons']);
+  const formulaSensitive=new Set(['source','id','type','offerPurpose','collectedAt','requestId','executionId','title','link','neighborhood','city','state','advertiser','ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_status','ref_reasons']);
   const csvValue=(key,value)=>{
     const raw=String(value??'');
     // Protege a abertura do CSV em planilhas contra fórmulas injetadas em
