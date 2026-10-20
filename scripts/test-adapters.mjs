@@ -137,3 +137,29 @@ test('Possíveis duplicidades exigem mesmo município, tipologia, bairro, preço
  assert.equal(ctx.duplicate({...same,price:350000}),false);
  ctx.records.length=0;
 });
+
+test('Normalização: address vazio não esconde localização e coordenadas válidas em location',()=>{
+ const p=ctx.normalized({
+  id:'local-1',unitTypes:['HOME'],address:{},location:{
+   city:'Salto de Pirapora',stateCode:'SP',neighborhood:'Centro',latitude:-23.61,longitude:-47.58,approximate:true
+  },prices:{mainValue:300000},attributes:{usableAreas:[100]}
+ },'zapimoveis.com.br');
+ assert.equal(p.city,'Salto de Pirapora');
+ assert.equal(p.state,'SP');
+ assert.equal(p.neighborhood,'Centro');
+ assert.equal(p.lat,-23.61);
+ assert.equal(p.approx,true);
+ assert.equal(ctx.reviewComparable(p).status,'review');
+});
+test('Possível duplicidade de terrenos usa área total, sem criar área útil fictícia',()=>{
+ ctx.records.length=0;
+ ctx.records.push({
+  key:'origem:1',type:'land',price:200000,usable:null,total:250,beds:null,
+  city:'Salto de Pirapora',state:'SP',neighborhood:'Centro'
+ });
+ const maybe={key:'outra:2',type:'land',price:201000,usable:null,total:251,beds:null,
+  city:'Salto de Pirapora',state:'SP',neighborhood:'Centro'};
+ assert.equal(ctx.duplicate(maybe),true);
+ assert.equal(ctx.reviewComparable({...maybe,link:'https://example.com/imovel'}).unitPrice,201000/251);
+ ctx.records.length=0;
+});
