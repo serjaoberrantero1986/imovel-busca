@@ -9,7 +9,7 @@ function el(id){
 }
 const doc={getElementById:el,createElement(){return {value:'',textContent:'',innerHTML:'',classList:{toggle(){}},querySelector(){return {}},appendChild(){}}}};
 const src=readFileSync(new URL('../app.js',import.meta.url),'utf8');
-const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords,guideAdvice,renderGuidedSummary,selected,computeOfferIndicator,renderOfferIndicator})',{document:doc,window:{},console,URL});
+const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords,guideAdvice,renderGuidedSummary,selected,computeOfferIndicator,renderOfferIndicator,inferOfferPurpose})',{document:doc,window:{},console,URL});
 test('VivaReal PLP: preços em array e coordenadas aninhadas',()=>{
   const x=ctx.payload({data:{source:'vivareal.com.br',items:[{
     id:'100',title:'Casa à venda',unitTypes:['HOME'],
@@ -551,4 +551,50 @@ test('Painel de valor responde à seleção sem exigir exportação CSV',()=>{
  assert.match(el('offer-indicator').innerHTML,/não um valor de avaliação/);
  ctx.selected.clear();ctx.records.length=0;
  el('reference-clear').onclick();
+});
+
+
+test('Indicativo de venda não confunde anúncio de aluguel com preço de comercialização',()=>{
+ const ref=ctx.makeReference({type:'house',city:'Salto de Pirapora',state:'SP',usable:100});
+ const ads=[
+  {key:'sale:1',source:'vivareal.com.br',id:'s1',type:'house',price:250000,usable:100,
+    link:'https://www.vivareal.com.br/imovel/casa-100m2-venda-RS250000-id-1/',
+    city:'Salto de Pirapora',state:'SP'},
+  {key:'sale:2',source:'vivareal.com.br',id:'s2',type:'house',price:300000,usable:100,
+    link:'https://www.vivareal.com.br/imovel/casa-100m2-venda-RS300000-id-2/',
+    city:'Salto de Pirapora',state:'SP'},
+  {key:'rent:3',source:'vivareal.com.br',id:'r3',type:'house',price:1800,usable:100,
+    link:'https://www.vivareal.com.br/imovel/casa-100m2-aluguel-RS1800-id-3/',
+    city:'Salto de Pirapora',state:'SP'}
+ ];
+ assert.equal(ctx.inferOfferPurpose(ads[0]),'sale');
+ assert.equal(ctx.inferOfferPurpose(ads[2]),'rent');
+ const result=ctx.computeOfferIndicator(ref,ads);
+ assert.equal(result.included.length,2);
+ assert.equal(result.excluded.length,1);
+ assert.match(result.excluded[0].reason,/locação/);
+ assert.equal(result.value,275000);
+ assert.equal(ctx.inferOfferPurpose({prices:[],offerPurpose:'rent'}),'rent');
+ assert.equal(ctx.inferOfferPurpose({prices:[],businessType:'sale'}),'sale');
+});
+test('CSV de comparáveis mantém finalidade de venda quando disponível, sem inventar quando ausente',()=>{
+ const cols='source;id;type;title;link;price;usable;total;city;state';
+ const rows=[
+  '"vivareal.com.br";"1";"house";"Casa 1";"https://www.vivareal.com.br/imovel/casa-100m2-venda-RS300000-id-1/";"300000";"100";"120";"Salto de Pirapora";"SP"',
+  '"vivareal.com.br";"2";"house";"Casa 2";"https://www.vivareal.com.br/imovel/casa-100m2-aluguel-RS2000-id-2/";"2000";"100";"120";"Salto de Pirapora";"SP"',
+  '"vivareal.com.br";"3";"house";"Casa 3";"";"310000";"100";"120";"Salto de Pirapora";"SP"'
+ ];
+ const parsed=ctx.parseExportCsv([cols,...rows].join('\n'));
+ assert.equal(parsed[0].offerPurpose,'sale');
+ assert.equal(parsed[1].offerPurpose,'rent');
+ assert.equal(parsed[2].offerPurpose,'unknown');
+});
+test('Interface mostra indicativo como informação principal e CSV apenas opcional',()=>{
+ const html=readFileSync(new URL('../index.html',import.meta.url),'utf8');
+ const indicative=html.indexOf('id="offer-indicator"');
+ const guide=html.indexOf('id="guided-summary"');
+ const exportButton=html.indexOf('id="export-btn"');
+ assert.ok(indicative>0&&guide>indicative&&exportButton>guide);
+ assert.match(html,/Exportar CSV \(opcional\)/);
+ assert.match(html,/não precisa exportar um arquivo/i);
 });
