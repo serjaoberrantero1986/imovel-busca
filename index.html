@@ -79,6 +79,19 @@
 .eligibility-line .status.included{color:#287045}.eligibility-line .status.pending{color:#956422}.eligibility-line .status.excluded{color:#ad3f3f}
 #eligibility-more{margin-top:12px}
 @media(max-width:620px){.eligibility-overview{grid-template-columns:1fr 1fr}.eligibility-line{grid-template-columns:1fr}.eligibility-panel{padding:12px}}
+
+.review-panel{background:#f8fbff;border:1px solid #bed2e7;border-radius:15px;padding:18px;margin:18px 0 12px}
+.review-top{display:flex;justify-content:space-between;gap:10px;align-items:start;flex-wrap:wrap}
+.review-top h3{font-size:16px;color:#243e5a;margin:0}
+.review-target{font-size:13px;color:#344d68;font-weight:750}
+.review-evidence{display:grid;gap:7px;background:#fffaf0;border:1px solid #eed9b5;border-radius:10px;padding:11px;font-size:12px;line-height:1.5;color:#5d523d}
+.review-evidence strong{color:#6e4c2c}
+.review-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:15px 0}
+.review-proof{display:grid;gap:12px;border-top:1px solid #dce6f0;padding-top:12px}
+.review-actions{display:flex;gap:9px;flex-wrap:wrap;margin:12px 0}
+.review-verify{background:#f0f7ff;color:#31567e;border:1px solid #ccdfef;border-radius:8px;font-size:11px;padding:7px 10px;font-weight:700}
+@media(max-width:720px){.review-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:500px){.review-grid{grid-template-columns:1fr}.review-actions button{width:100%}}
 </style></head>
 <body>
 <header><div class="top"><div><div class="logo">⌖ Imóvel <b>Busca</b></div><small>Laboratório independente de pesquisa e comparação</small></div><span class="eyebrow">AMBIENTE EXPERIMENTAL</span></div></header>
@@ -255,6 +268,41 @@
       <div id="eligibility-list" class="eligibility-list"></div>
       <button id="eligibility-more" type="button" class="secondary hidden">Mostrar mais anúncios</button>
     </details>
+  </section>
+
+  <section id="review-panel" class="review-panel hidden" aria-labelledby="review-title">
+    <div class="review-top"><div><h3 id="review-title">Conferência assistida de anúncio</h3>
+      <p class="hint">Corrija somente dados que você conseguiu verificar. O sistema não inventa áreas nem substitui sua decisão profissional.</p></div>
+      <button id="review-close" type="button" class="secondary">Fechar conferência</button>
+    </div>
+    <p id="review-target" class="review-target"></p>
+    <div id="review-evidence" class="review-evidence"></div>
+    <p id="review-history" class="hint"></p>
+    <div class="review-grid">
+      <label class="field">Preço pedido (R$)<input id="review-price" type="number" step="any" min="1" max="1000000000000" placeholder="Não informado"></label>
+      <label class="field">Área útil / privativa (m²)<input id="review-usable" type="number" step="any" min="0.01" max="1000000000" placeholder="Não confirmada"></label>
+      <label class="field">Área total / terreno (m²)<input id="review-total" type="number" step="any" min="0.01" max="1000000000000" placeholder="Não confirmada"></label>
+      <label class="field">Dormitórios<input id="review-beds" type="number" step="1" min="0" max="100" placeholder="Não informados"></label>
+      <label class="field">Suítes<input id="review-suites" type="number" step="1" min="0" max="100" placeholder="Não informadas"></label>
+      <label class="field">Banheiros<input id="review-baths" type="number" step="1" min="0" max="100" placeholder="Não informados"></label>
+      <label class="field">Vagas<input id="review-spaces" type="number" step="1" min="0" max="1000" placeholder="Não informadas"></label>
+    </div>
+    <div class="review-proof">
+      <label class="field">Origem da conferência<select id="review-source">
+        <option value="">Selecione como verificou os dados</option>
+        <option value="listing">Conferi o anúncio original</option>
+        <option value="description">Conferi a descrição do anúncio</option>
+        <option value="title">Conferi o título do anúncio</option>
+        <option value="document">Conferi documentação / ficha do imóvel</option>
+        <option value="contact">Confirmei com o responsável pelo anúncio</option>
+      </select></label>
+      <label class="field">Qual informação foi conferida e por quê?<textarea id="review-note" rows="2" maxlength="700" placeholder="Ex.: anúncio informa expressamente área útil de 110 m² na ficha de características."></textarea></label>
+    </div>
+    <div class="review-actions">
+      <button id="review-save" class="primary" type="button">Salvar dados conferidos</button>
+      <button id="review-reset" class="secondary" type="button">Restaurar dados originais desta fonte</button>
+    </div>
+    <p class="hint">As correções ficam nesta sessão e são registradas com valor anterior, novo valor, fonte declarada e horário. Não existe identidade profissional autenticada ou assinatura neste laboratório. O registro poderá ser exportado, mas exigirá nova conferência ao reimportar.</p>
   </section>
   <div id="offer-indicator" class="offer-indicator" aria-live="polite" aria-atomic="true">
     <div class="offer-empty"><h3>Aguardando anúncios</h3><p>Selecione imóveis para comparar.</p></div>

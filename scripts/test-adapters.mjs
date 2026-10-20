@@ -9,7 +9,7 @@ function el(id){
 }
 const doc={getElementById:el,createElement(){return {value:'',textContent:'',innerHTML:'',classList:{toggle(){}},querySelector(){return {}},appendChild(){}}}};
 const src=readFileSync(new URL('../app.js',import.meta.url),'utf8');
-const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords,guideAdvice,renderGuidedSummary,selected,computeOfferIndicator,renderOfferIndicator,inferOfferPurpose,setReferenceForTest:reference=>{referenceProfile=reference},planMixedSearch,mixedTargets,executeMixedSearch,performMixedSearch,suspectedCrossPortalRepeat,bulkSelectVisible,syncSelectionToolbar,extractTextEvidence,clearComparableSelection,summarizeEligibility,renderEligibility})',{document:doc,window:{},console,URL});
+const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords,guideAdvice,renderGuidedSummary,selected,computeOfferIndicator,renderOfferIndicator,inferOfferPurpose,setReferenceForTest:reference=>{referenceProfile=reference},planMixedSearch,mixedTargets,executeMixedSearch,performMixedSearch,suspectedCrossPortalRepeat,bulkSelectVisible,syncSelectionToolbar,extractTextEvidence,clearComparableSelection,summarizeEligibility,renderEligibility,applyReviewChanges,restoreProviderFields,parseImportedHistory,openReview,closeReview,reviewTarget})',{document:doc,window:{},console,URL});
 test('VivaReal PLP: preços em array e coordenadas aninhadas',()=>{
   const x=ctx.payload({data:{source:'vivareal.com.br',items:[{
     id:'100',title:'Casa à venda',unitTypes:['HOME'],
@@ -925,4 +925,143 @@ test('Interface: a triagem padrão e seus detalhes acompanham toda a seleção',
    'eligibility-filter','eligibility-more','show-more-cards']){
    assert.match(html,new RegExp('id="'+id+'"'));
  }
+});
+
+
+test('Conferência assistida: confirmação explícita recupera área e faz anúncio entrar no indicativo',()=>{
+ const ref=ctx.makeReference({type:'house',city:'Salto de Pirapora',state:'SP',usable:110});
+ const unverified={
+  key:'olx:area',id:'area',source:'olx.com.br',type:'house',
+  title:'Casa área útil 100 m²',textEvidence:ctx.extractTextEvidence('Casa com área útil de 100 m²'),
+  city:'Salto de Pirapora',state:'SP',price:270000,usable:null,total:null,bedrooms:null,
+  beds:3,suites:1,baths:2,spaces:2,neighborhood:'Centro'
+ };
+ const peer={...unverified,key:'viva:other',id:'other',source:'vivareal.com.br',
+   title:'Casa verificada',usable:120,price:300000,textEvidence:[]};
+ const initial=ctx.computeOfferIndicator(ref,[unverified,peer]);
+ assert.equal(initial.included.length,1);
+ assert.equal(initial.status,'unavailable');
+ const fields={price:'270000',usable:'100',total:'',beds:'3',suites:'1',baths:'2',spaces:'2'};
+ const reviewed=ctx.applyReviewChanges(unverified,fields,'title',
+   'O título informa expressamente área útil e a metragem está legível.',
+   '2026-10-20T12:00:00.000Z');
+ assert.equal(reviewed.usable,100);
+ assert.equal(reviewed.providerSnapshot.usable,null);
+ assert.equal(reviewed.reviewHistory.length,1);
+ assert.equal(reviewed.reviewHistory[0].field,'usable');
+ assert.equal(reviewed.reviewHistory[0].source,'title');
+ assert.equal(reviewed.reviewHistory[0].oldValue,null);
+ assert.equal(reviewed.reviewHistory[0].newValue,100);
+ assert.equal(ctx.computeOfferIndicator(ref,[reviewed,peer]).included.length,2);
+ assert.equal(ctx.computeOfferIndicator(ref,[reviewed,peer]).status,'ready');
+ assert.equal(unverified.usable,null,'Registro de origem não pode ser mutado diretamente');
+ const restored=ctx.restoreProviderFields(reviewed,'2026-10-20T13:00:00.000Z');
+ assert.equal(restored.usable,null);
+ assert.equal(restored.reviewHistory.length,2);
+ assert.equal(restored.reviewHistory[1].source,'restore');
+ assert.equal(ctx.computeOfferIndicator(ref,[restored,peer]).status,'unavailable');
+});
+
+test('Conferência: proíbe inferir natureza da metragem e alterar campos sem indícios',()=>{
+ const original={
+   key:'olx:raw',title:'Casa de 120 m² com 3 suítes',
+   textEvidence:ctx.extractTextEvidence('Casa de 120 m² com 3 suítes'),
+   usable:null,total:null,price:300000,beds:3,suites:null,baths:2,spaces:2
+ };
+ const form={price:'300000',usable:'120',total:'',beds:'3',suites:'',baths:'2',spaces:'2'};
+ assert.throws(()=>ctx.applyReviewChanges(original,form,'title',
+   'Utilizei o texto do anúncio como evidência.'),/Área útil\/privativa/);
+ assert.throws(()=>ctx.applyReviewChanges(original,form,'description',
+   'O anúncio parece informar a metragem.'),/Área útil\/privativa/);
+ const suiteForm={...form,usable:'',suites:'3'};
+ const reviewed=ctx.applyReviewChanges(original,suiteForm,'title',
+   'O título menciona claramente três suítes existentes no imóvel.');
+ assert.equal(reviewed.suites,3);
+ assert.equal(reviewed.usable,null);
+ assert.throws(()=>ctx.applyReviewChanges(original,{...suiteForm,price:'400000'},'title',
+   'O preço estaria no texto e deveria ser confirmado.'),/Preço anunciado/);
+});
+
+test('Conferência: não aceita fontes ou justificativas inválidas e valida campos estritamente',()=>{
+ const p={key:'source:1',price:300000,usable:100,total:200,beds:2,suites:1,baths:2,spaces:2};
+ const form={price:'300000',usable:'110',total:'200',beds:'2',suites:'1',baths:'2',spaces:'2'};
+ assert.throws(()=>ctx.applyReviewChanges(p,form,'','O anúncio foi conferido integralmente.'),/origem/);
+ assert.throws(()=>ctx.applyReviewChanges(p,form,'listing','curto'),/mínimo/);
+ assert.throws(()=>ctx.applyReviewChanges(p,{...form,usable:'-100'},'listing',
+   'A ficha do anúncio informa a área privativa.'),/Área útil/);
+ assert.throws(()=>ctx.applyReviewChanges(p,{...form,beds:'2.4'},'listing',
+   'Conferi a ficha de dormitórios do anúncio.'),/Dormitórios/);
+ assert.throws(()=>ctx.applyReviewChanges(p,
+   {...form,usable:'100'},'listing','Conferi a ficha e confirmei os dados.'),/Nenhum campo/);
+ const good=ctx.applyReviewChanges(p,form,'listing',
+   'Conferi a metragem privativa na ficha do anúncio.');
+ assert.equal(good.usable,110);
+ assert.equal(good.providerSnapshot.usable,100);
+});
+
+test('Conferência: novas consultas do mesmo anúncio não sobrescrevem correções locais',()=>{
+ ctx.records.length=0;ctx.selected.clear();
+ el('auto-select-new').checked=true;
+ const p={key:'viva:10',id:'10',source:'vivareal.com.br',title:'Casa',
+   type:'house',city:'Salto de Pirapora',state:'SP',price:300000,usable:null,total:250,
+   beds:3,suites:1,baths:2,spaces:2,textEvidence:[],amenities:[]};
+ ctx.loadNormalized([p]);
+ const prior=ctx.applyReviewChanges(ctx.records[0],{
+   price:'300000',usable:'120',total:'250',beds:'3',suites:'1',baths:'2',spaces:'2'
+ },'listing','O anúncio original informa área útil claramente.');
+ ctx.records[0]=prior;
+ ctx.loadNormalized([{...p,usable:105,total:270,price:310000}]);
+ assert.equal(ctx.records[0].usable,120);
+ assert.equal(ctx.records[0].total,270);
+ assert.equal(ctx.records[0].price,310000);
+ assert.equal(ctx.records[0].reviewHistory.length,1);
+ assert.equal(ctx.records[0].providerConflicts.usable.providerValue,105);
+ ctx.records.length=0;ctx.selected.clear();
+});
+
+test('Conferência: CSV guarda histórico declarado mas importação não autentica revisão passada',()=>{
+ const rows=JSON.stringify([{
+   field:'usable',oldValue:null,newValue:110,source:'listing',
+   note:'O anúncio original informou a área útil de 110 m².',
+   at:'2026-10-20T12:00:00.000Z'
+ }]);
+ const encode=x=>'"'+String(x??'').replace(/"/g,'""')+'"';
+ const headers='source;id;type;title;link;price;usable;total;city;state;reviewHistory';
+ const values=[
+  'olx.com.br','123','house','Casa na cidade',
+  'https://www.olx.com.br/imoveis/id-123','300000','110','200',
+  'Salto de Pirapora','SP',rows
+ ];
+ const parsed=ctx.parseExportCsv([headers,values.map(encode).join(';')].join('\n'))[0];
+ assert.equal(parsed.usable,110);
+ assert.equal(parsed.reviewHistory.length,1);
+ assert.equal(parsed.reviewImported,true);
+ assert.equal(parsed.manualOverrides.usable,undefined);
+ const withoutReviews=ctx.parseExportCsv([headers,
+   [...values.slice(0,10),'[]'].map(encode).join(';')].join('\n'))[0];
+ assert.equal(withoutReviews.reviewImported,false);
+ assert.equal(withoutReviews.reviewHistory.length,0);
+ assert.match(parsed.reviewHistory[0].evidenceLevel,/não autenticado/);
+ const bad=ctx.parseImportedHistory(JSON.stringify([{field:'city',oldValue:'X',newValue:'Y',source:'title',
+   note:'Alteração indevida de cidade',at:'2026-10-20T12:00:00.000Z'}]));
+ assert.equal(bad.length,0);
+});
+
+test('Conferência: a tela oferece revisão de dados em cards e painel de elegibilidade',()=>{
+ const html=readFileSync(new URL('../index.html',import.meta.url),'utf8');
+ for(const id of ['review-panel','review-target','review-evidence','review-history','review-save',
+   'review-reset','review-close','review-source','review-note','review-usable','review-total']){
+   assert.match(html,new RegExp('id="'+id+'"'));
+ }
+ assert.equal(html.includes('Conferência assistida de anúncio'),true);
+ const p={key:'portal:123',title:'Casa teste',source:'portal',
+   city:'Salto de Pirapora',state:'SP',price:300000,usable:null,total:null,
+   textEvidence:ctx.extractTextEvidence('Casa 125 m² com 3 quartos')};
+ ctx.records.push(p);
+ ctx.openReview(p.key);
+ assert.match(el('review-target').textContent,/Casa teste/);
+ assert.match(el('review-evidence').innerHTML,/125/);
+ assert.equal(el('review-panel').classList!==undefined,true);
+ ctx.closeReview();
+ ctx.records.length=0;
 });

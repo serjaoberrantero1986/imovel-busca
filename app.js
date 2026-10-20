@@ -550,6 +550,168 @@ function computeOfferIndicator(reference,chosen){
   return result;
 }
 
+
+// Conferência assistida: somente campos numéricos revisáveis. Não altera cidade,
+// tipologia ou URL; esses campos exigem outras fontes e fluxos de verificação.
+const REVIEW_FIELDS={
+  price:{label:'Preço anunciado',min:0.01,max:1e12,integer:false},
+  usable:{label:'Área útil/privativa',min:0.01,max:1e9,integer:false},
+  total:{label:'Área total/terreno',min:0.01,max:1e12,integer:false},
+  beds:{label:'Dormitórios',min:0,max:100,integer:true},
+  suites:{label:'Suítes',min:0,max:100,integer:true},
+  baths:{label:'Banheiros',min:0,max:100,integer:true},
+  spaces:{label:'Vagas',min:0,max:1000,integer:true}
+};
+const REVIEW_SOURCES=new Set(['listing','title','description','document','contact']);
+let activeReviewKey=null;
+function reviewFieldNumber(raw,field){
+  const v=REVIEW_FIELDS[field];
+  if(!v)throw Error('Campo de conferência não permitido.');
+  if(raw===null||raw===undefined||String(raw).trim()==='')return null;
+  const str=String(raw).trim();
+  if(!/^\d+(?:[.,]\d+)?$/.test(str))throw Error(v.label+': informe um número válido.');
+  const value=Number(str.replace(',','.'));
+  if(!Number.isFinite(value)||value<v.min||value>v.max||(v.integer&&!Number.isInteger(value)))
+    throw Error(v.label+': valor fora do intervalo permitido.');
+  return value;
+}
+function suggestedByText(p,field,value,origin){
+  const candidates=(p.textEvidence||[]).filter(e=>
+    e.origin===(origin==='title'?'título':'descrição')&&Number(e.value)===value);
+  if(field==='usable')return candidates.some(e=>e.field==='area'&&e.kind==='útil/privativa');
+  if(field==='total')return candidates.some(e=>e.field==='area'&&e.kind==='terreno/total');
+  if(field==='price')return false;
+  return candidates.some(e=>e.field===field);
+}
+function applyReviewChanges(p,form,source,note,at=new Date().toISOString()){
+  if(!p||!p.key)throw Error('Anúncio de conferência inválido.');
+  if(!REVIEW_SOURCES.has(source))throw Error('Escolha a origem da evidência que fundamenta a correção.');
+  const reason=String(note||'').trim();
+  if(reason.length<12||reason.length>700)
+    throw Error('Explique o que foi conferido (mínimo de 12 e máximo de 700 caracteres).');
+  if(!/^\d{4}-\d\d-\d\dT\d\d:\d\d:/.test(at))
+    throw Error('Data de conferência inválida.');
+  const changes=[];
+  for(const field of Object.keys(REVIEW_FIELDS)){
+    const value=reviewFieldNumber(form?.[field],field);
+    const prev=p[field]??null;
+    if(value===prev)continue;
+    if(source==='title'||source==='description'){
+      if(value===null||!suggestedByText(p,field,value,source)){
+        throw Error(REVIEW_FIELDS[field].label+
+          ': o texto não identifica explicitamente esse dado. Confira a ficha do anúncio, documentação ou anunciante.');
+      }
+    }
+    changes.push({field,oldValue:prev,newValue:value,source,note:reason,at,
+      evidenceLevel:'declaração do operador, sem autenticação'});
+  }
+  if(!changes.length)throw Error('Nenhum campo foi alterado. Informe o dado que conseguiu confirmar.');
+  const snapshot=p.providerSnapshot&&typeof p.providerSnapshot==='object'?
+    {...p.providerSnapshot}:Object.fromEntries(Object.keys(REVIEW_FIELDS).map(field=>[field,p[field]??null]));
+  const overrides={...(p.manualOverrides||{})};
+  const result={...p,providerSnapshot:snapshot,
+    reviewHistory:[...(p.reviewHistory||[]),...changes].slice(-100),
+    reviewImported:false};
+  for(const change of changes){
+    result[change.field]=change.newValue;
+    overrides[change.field]=true;
+  }
+  result.manualOverrides=overrides;
+  return result;
+}
+function restoreProviderFields(p,at=new Date().toISOString()){
+  if(!p?.providerSnapshot)return p;
+  const audit=[];
+  const result={...p};
+  for(const field of Object.keys(REVIEW_FIELDS)){
+    const original=p.providerSnapshot[field]??null;
+    if(original!==p[field]){
+      audit.push({field,oldValue:p[field]??null,newValue:original,source:'restore',
+        note:'Restauração dos valores da fonte capturados antes da primeira correção.',
+        at,evidenceLevel:'ação local sem autenticação'});
+    }
+    result[field]=original;
+  }
+  result.manualOverrides={};
+  result.reviewHistory=[...(p.reviewHistory||[]),...audit].slice(-100);
+  result.reviewImported=false;
+  return result;
+}
+function parseImportedHistory(raw){
+  if(typeof raw!=='string'||raw.length>20000)return [];
+  try{
+    const data=JSON.parse(raw);
+    if(!Array.isArray(data))return [];
+    return data.slice(-60).filter(e=>e&&typeof e==='object'&&
+      Object.hasOwn(REVIEW_FIELDS,e.field)&&
+      ['listing','title','description','document','contact','restore'].includes(e.source)&&
+      typeof e.note==='string'&&e.note.length<=700&&
+      typeof e.at==='string'&&/^\d{4}-\d\d-\d\dT/.test(e.at)).map(e=>({
+        field:e.field,oldValue:reviewFieldNumber(e.oldValue,e.field),
+        newValue:reviewFieldNumber(e.newValue,e.field),
+        source:e.source,note:e.note,at:e.at,
+        evidenceLevel:'histórico importado do CSV, não autenticado'
+      }));
+  }catch{return [];}
+}
+function reviewTarget(){
+  return records.find(x=>x.key===activeReviewKey)||null;
+}
+function openReview(key){
+  const p=records.find(x=>x.key===key);
+  if(!p){report('Este anúncio não está mais na sessão.',true);return;}
+  activeReviewKey=p.key;
+  const panel=$('review-panel');
+  panel.classList.remove('hidden');
+  $('review-target').textContent=p.title+' · '+p.source+' · '+p.city+'/'+p.state;
+  const evidence=(p.textEvidence||[]).slice(0,12);
+  const original=p.providerSnapshot;
+  $('review-evidence').innerHTML='<strong>Informações encontradas no texto:</strong>'+
+    (evidence.length?'<div>'+evidence.map(e=>safe(e.label)+' — '+safe(e.origin)).join(' · ')+'</div>':
+      '<div>Nenhum atributo numérico explícito no título/descrição.</div>')+
+    (original?'<div><strong>Valores fornecidos originalmente pelo portal:</strong> '+
+      Object.keys(REVIEW_FIELDS).map(field=>safe(REVIEW_FIELDS[field].label)+': '+
+        safe(original[field]??'não informado')).join(' · ')+'</div>':'')+
+    (p.link?'<div><a href="'+safe(p.link)+'" rel="noopener noreferrer" target="_blank">Abrir anúncio para conferir ↗</a></div>':'');
+  $('review-history').textContent=(p.reviewHistory?.length||0)+' alteração(ões) registradas nesta sessão ou arquivo.'+
+    (p.reviewImported?' Histórico importado: autoria e autenticidade não confirmadas.':'')+
+    (Object.keys(p.providerConflicts||{}).length?
+      ' Atenção: a fonte voltou a informar valores diferentes dos dados revisados.':'');
+  for(const field of Object.keys(REVIEW_FIELDS))
+    $('review-'+field).value=p[field]===null||p[field]===undefined?'':String(p[field]);
+  $('review-source').value='';
+  $('review-note').value='';
+  panel.scrollIntoView?.({behavior:'smooth',block:'start'});
+}
+function closeReview(){
+  activeReviewKey=null;
+  $('review-panel').classList.add('hidden');
+}
+$('review-close').onclick=closeReview;
+$('review-save').onclick=()=>{
+  try{
+    const prior=reviewTarget();
+    if(!prior)throw Error('Escolha um anúncio para conferir.');
+    const input=Object.fromEntries(Object.keys(REVIEW_FIELDS).map(f=>[f,$('review-'+f).value]));
+    const corrected=applyReviewChanges(prior,input,$('review-source').value,$('review-note').value);
+    const index=records.findIndex(x=>x.key===prior.key);
+    records[index]=corrected;
+    refresh();openReview(corrected.key);
+    report('Correção registrada com origem, justificativa e valores anteriores. A triagem e o indicativo foram recalculados.');
+  }catch(error){report(error.message,true);}
+};
+$('review-reset').onclick=()=>{
+  try{
+    const prior=reviewTarget();
+    if(!prior?.providerSnapshot)throw Error('Este anúncio ainda não possui correções locais para restaurar.');
+    if(window.confirm?.('Restaurar os valores originais deste anúncio e registrar a restauração?')===false)return;
+    const index=records.findIndex(x=>x.key===prior.key);
+    records[index]=restoreProviderFields(prior);
+    refresh();openReview(prior.key);
+    report('Os valores originais capturados na primeira conferência foram restaurados e a ação foi registrada.');
+  }catch(error){report(error.message,true);}
+};
+
 let eligibilityLimit=25;
 const eligibilityNames={included:'Aproveitado',pending:'Conferência necessária',excluded:'Excluído pelo critério'};
 function summarizeEligibility(stats,chosen){
@@ -592,10 +754,14 @@ function renderEligibility(stats,chosen){
       '</p></div><span class="status '+row.classification+'">'+eligibilityNames[row.classification]+'</span>'+
       '<div class="reason"><strong>Motivo:</strong> '+safe(row.reason)+
       (link?' · <a class="link" href="'+safe(link)+'" target="_blank" rel="noopener noreferrer">Ver anúncio original ↗</a>':'')+
-      '</div></div>';
+      ' · <button type="button" class="review-from-eligibility review-verify" data-review-key="'+
+      safe(encodeURIComponent(row.key))+'">Conferir dados</button></div></div>';
   }).join(''):'<p class="hint">Nenhum anúncio nesta categoria.</p>';
   const more=$('eligibility-more');
   more.classList.toggle('hidden',filtered.length<=eligibilityLimit);
+  list.querySelectorAll?.('.review-from-eligibility').forEach(button=>{
+    button.onclick=()=>openReview(decodeURIComponent(button.dataset.reviewKey||''));
+  });
 }
 $('eligibility-filter').addEventListener('change',()=>{
   eligibilityLimit=25;renderOfferIndicator();
@@ -889,9 +1055,13 @@ function renderCards() {
       '<div class="muted">'+safe(p.neighborhood)+' · '+safe(p.city)+(dis!==null?' · '+dis.toFixed(1)+' km do centro':'')+'</div>'+
       (flag?'<span class="pill orange">Possível duplicidade — revisar</span>':'')+
       '<div class="row between"><label class="check"><input class="pick" type="checkbox" '+(selected.has(p.key)?'checked':'')+'> Comparar</label>'+(p.link?'<a class="link" target="_blank" rel="noopener noreferrer" href="'+safe(p.link)+'">Ver anúncio ↗</a>':'')+'</div>'+
+      '<button type="button" class="review-verify">Conferir/corrigir dados'+
+       ((p.reviewHistory||[]).length?' · '+p.reviewHistory.length+' alteração(ões)':'')+'</button>'+
       (p.link&&['zapimoveis.com.br','olx.com.br','imovelweb.com.br','vivareal.com.br','chavesnamao.com.br'].includes(p.source)?'<button class="detail" type="button">Buscar detalhes (PDP) · pode consumir créditos</button>':'')+
       (p.detailed?'<div class="pill orange">Dados adicionais consultados</div>':'');
     card.querySelector('.pick').onchange = event=>{if(event.target.checked)selected.add(p.key);else selected.delete(p.key);refresh();};
+    const reviewButton=card.querySelector('.review-verify');
+    if(reviewButton)reviewButton.onclick=()=>openReview(p.key);
     const details=card.querySelector('.detail');
     if(details)details.onclick=()=>fetchDetails(p,details);
     box.appendChild(card);
@@ -950,6 +1120,17 @@ function loadNormalized(items,total=null,detailed=false){
       for(const [key,val] of Object.entries(p)) {
         if(val===null||val===undefined||val==='—'||(Array.isArray(val)&&val.length===0))continue;
         if(key==='type'&&val==='unknown'&&prior.type!=='unknown')continue;
+        // Novos retornos do fornecedor não apagam correções revisadas localmente.
+        if(prior.manualOverrides?.[key]){
+          if(val!==prior[key]){
+            update.providerConflicts={...(update.providerConflicts||{}),
+              [key]:{providerValue:val,reviewedValue:prior[key]}};
+          }
+          continue;
+        }
+        // Histórico local não é substituído por metadados da nova consulta.
+        if(['reviewHistory','manualOverrides','providerSnapshot','reviewImported','providerConflicts'].includes(key))
+          continue;
         update[key]=val;
       }
       if(detailed)update.detailed=true;
@@ -961,6 +1142,7 @@ function loadNormalized(items,total=null,detailed=false){
     }
   }
   if(total!==null)reported=total;
+  if(activeReviewKey&&!records.some(x=>x.key===activeReviewKey))closeReview();
   drawMap(true);refresh();
   report('Importação concluída: '+items.length+' anúncios nesta consulta e '+records.length+' únicos por ID/fonte na sessão. Dados sujeitos a revisão.');
 }
@@ -1005,6 +1187,7 @@ function parseExportCsv(raw){
     const latitude=number(row.lat),longitude=number(row.lng);
     const valid=latitude!==null&&longitude!==null&&Math.abs(latitude)<=90&&Math.abs(longitude)<=180&&(latitude!==0||longitude!==0);
     const neighborhood=row.neighborhood?.trim()||'—';
+    const importedReviewHistory=parseImportedHistory(row.reviewHistory);
     const record={
       source,id:id||link,key:source+':'+(id||link),type,
       offerPurpose:inferOfferPurpose({...row,link}),
@@ -1023,7 +1206,10 @@ function parseExportCsv(raw){
       neighborhood,city:row.city?.trim()||'—',
       state:uf(row.state)||row.state?.trim()||'—',
       lat:valid?latitude:null,lng:valid?longitude:null,approx:row.approx?.trim().toLowerCase()==='true',
-      advertiser:row.advertiser?.trim()||'—',description:'—',amenities:[],detailed:false
+      advertiser:row.advertiser?.trim()||'—',description:'—',amenities:[],detailed:false,
+      reviewHistory:importedReviewHistory,
+      reviewImported:importedReviewHistory.length>0,
+      providerSnapshot:null,manualOverrides:{},providerConflicts:{}
     };
     return record;
   });
@@ -1040,7 +1226,7 @@ $('csv-import-btn').onclick=async()=>{
   }catch(e){report(e.message||'Erro ao ler o CSV',true);}
 };
 $('import-btn').onclick=()=>{try{activeLocation=null;displayAudit(null);load(JSON.parse($('json-input').value));}catch(e){report(e.message||'JSON inválido',true);}};
-$('clear-btn').onclick=()=>{records=[];selected.clear();reported=null;center=null;activeLocation=null;displayAudit(null);drawMap(false);refresh();report('Sessão limpa. Nenhum dado foi enviado ao servidor.');};
+$('clear-btn').onclick=()=>{records=[];selected.clear();reported=null;center=null;activeLocation=null;closeReview();displayAudit(null);drawMap(false);refresh();report('Sessão limpa. Nenhum dado foi enviado ao servidor.');};
 function tab(which){const api=which==='api';$('import-panel').classList.toggle('hidden',api);$('api-panel').classList.toggle('hidden',!api);$('tab-api').classList.toggle('active',api);$('tab-import').classList.toggle('active',!api);}
 $('tab-import').onclick=()=>tab('import');$('tab-api').onclick=()=>tab('api');
 const GEO_PORTALS=new Set(['zapimoveis.com.br','vivareal.com.br','chavesnamao.com.br']);
@@ -1484,11 +1670,22 @@ async function fetchDetails(p,button){
     // A PDP de alguns portais retorna outro ID; o anúncio original é associado pela URL.
     const idx=records.findIndex(item=>item.key===p.key);
     if(idx<0)throw new Error('Anúncio original não encontrado no comparador.');
-    const merged={...p};
+    // Entre o clique e a resposta assíncrona o operador pode ter conferido
+    // dados: aplicar detalhes sobre a versão MAIS RECENTE da sessão.
+    const current=records[idx];
+    const merged={...current};
     for(const [key,val] of Object.entries(detail)) {
       if(['id','key','source','link'].includes(key))continue;
       if(val===null||val===undefined||val==='—'||(Array.isArray(val)&&!val.length))continue;
       if(key==='type'&&val==='unknown')continue;
+      if(['reviewHistory','manualOverrides','providerSnapshot','reviewImported','providerConflicts'].includes(key))
+        continue;
+      if(current.manualOverrides?.[key]){
+        if(val!==current[key])
+          merged.providerConflicts={...(merged.providerConflicts||{}),
+            [key]:{providerValue:val,reviewedValue:current[key]}};
+        continue;
+      }
       merged[key]=val;
     }
     merged.detailed=true;
@@ -1505,7 +1702,7 @@ for(const id of ['in-radius','min-beds','dedupe','result-type','quality-filter',
 }
 $('export-btn').onclick=()=>{
   const picked=records.filter(p=>selected.has(p.key));if(picked.length<2)return;
-  const fields=['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','textEvidence','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser',
+  const fields=['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','textEvidence','reviewHistory','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser',
     'ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_area_m2','ref_area_tolerance_percent','ref_status','ref_reasons'];
   const derived=p=>{
     const r=referenceProfile,m=assessReference(r,p),land=r&&['land','farm'].includes(r.type);
@@ -1516,10 +1713,11 @@ $('export-btn').onclick=()=>{
       ref_area_m2:r?(land?r.total:r.usable)??'':'',
       ref_area_tolerance_percent:r?.tolerance??'',ref_status:m?.status??'',
       ref_reasons:m?.issues.join(' | ')??'',
-      textEvidence:JSON.stringify(p.textEvidence??[])
+      textEvidence:JSON.stringify(p.textEvidence??[]),
+      reviewHistory:JSON.stringify((p.reviewHistory||[]).slice(-60))
     };
   };
-  const formulaSensitive=new Set(['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','textEvidence','title','link','neighborhood','city','state','advertiser','ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_status','ref_reasons']);
+  const formulaSensitive=new Set(['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','textEvidence','reviewHistory','title','link','neighborhood','city','state','advertiser','ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_status','ref_reasons']);
   const csvValue=(key,value)=>{
     const raw=String(value??'');
     // Protege a abertura do CSV em planilhas contra fórmulas injetadas em
