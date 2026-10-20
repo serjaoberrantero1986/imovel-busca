@@ -43,6 +43,16 @@
 .mixed-source{display:flex;justify-content:space-between;gap:9px;flex-wrap:wrap;border-bottom:1px solid #e0e8ef;padding:7px 0}
 .mixed-source:last-child{border-bottom:0}.mixed-source strong{color:#28445f}.mixed-source .failure{color:#9b3033}.mixed-source .success{color:#2b7142}.mixed-source .pending{color:#7e653d}
 @media(max-width:620px){.mixed-portal-grid{grid-template-columns:1fr}.mixed-picker{padding:10px}.mixed-actions button{flex:1}}
+
+.selection-toolbar{border:1px solid #dde6ef;background:#f9fbfd;border-radius:12px;padding:12px 14px;margin-bottom:12px}
+.selection-heading{display:flex;gap:9px;justify-content:space-between;align-items:center;flex-wrap:wrap;font-size:13px}
+.selection-heading strong{color:#213952}
+.selection-actions{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.selection-actions button{padding:8px 12px;font-size:12px}
+.selection-toolbar .hint{margin:0}
+.title-evidence{display:flex;flex-wrap:wrap;align-items:center;gap:7px;font-size:11px;color:#6c5840;background:#fff9f0;border:1px solid #f1e2c9;border-radius:9px;padding:8px 10px;margin-top:5px;line-height:1.5}
+.title-evidence strong{color:#735523}
+@media(max-width:620px){.selection-actions{display:grid;grid-template-columns:1fr 1fr}.selection-actions button:last-child{grid-column:span 2}.selection-heading{display:grid}}
 </style></head>
 <body>
 <header><div class="top"><div><div class="logo">⌖ Imóvel <b>Busca</b></div><small>Laboratório independente de pesquisa e comparação</small></div><span class="eyebrow">AMBIENTE EXPERIMENTAL</span></div></header>
@@ -228,6 +238,18 @@
 </div>
 <p class="hint">Filtros de metragem usam área total para terrenos e imóveis rurais e área útil para os demais. Anúncios sem essa área são excluídos apenas quando o filtro de metragem está ativo.</p></details>
 <p id="filter-status" class="muted" style="margin:0 0 12px"></p>
+<div class="selection-toolbar" aria-label="Selecionar anúncios comparáveis">
+  <div class="selection-heading">
+    <strong>Selecionar anúncios para comparação</strong>
+    <span id="selection-counter" class="muted" aria-live="polite">0 selecionados de 0 exibidos</span>
+  </div>
+  <div class="selection-actions">
+    <button id="select-all-visible" class="secondary" type="button">Selecionar todos os visíveis</button>
+    <button id="deselect-all-visible" class="secondary" type="button">Desmarcar todos os visíveis</button>
+    <button id="deselect-all" class="secondary" type="button">Limpar toda a seleção</button>
+  </div>
+  <p class="hint">Esses controles selecionam os <strong>imóveis</strong>, não os portais. Filtros ativos definem quais anúncios estão visíveis. Selecionar não significa aprovar o imóvel para o cálculo.</p>
+</div>
 <div class="result-scroll" id="results"><p class="muted">Os resultados aparecerão aqui.</p></div>
 </section>
 <details class="technical-panel map-collapsible" id="map-extra"><summary>Ver mapa e distância entre imóveis (opcional)</summary><section class="panel">
