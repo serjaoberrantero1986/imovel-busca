@@ -734,3 +734,39 @@ test('Indicativo não duplica imóveis suspeitos entre portais sem apagar os reg
  assert.match(indicator.excluded[0].reason,/Possível duplicidade/);
  assert.equal(indicator.selectedCount,3);
 });
+
+
+test('CSV da pesquisa mista preserva proveniência quando existe e aceita ausência em legado',()=>{
+ const headers='source;id;type;offerPurpose;title;link;price;usable;total;city;state;collectedAt;requestId;executionId;searchCriteria';
+ const criteria=JSON.stringify({target:'vivareal.com.br',type:'plp',city:'Salto de Pirapora',state:'SP',page:1});
+ const encode=x=>'"'+String(x??'').replace(/"/g,'""')+'"';
+ const value=['vivareal.com.br','ref-300','house','sale','Casa perto do Centro',
+  'https://www.vivareal.com.br/imovel/casa-em-salto-de-pirapora-id-300/',
+  '300000','110','150','Salto de Pirapora','SP',
+  '2026-10-20T03:30:00.000Z','query-support-12','execution-33',criteria].map(encode).join(';');
+ const parsed=ctx.parseExportCsv([headers,value].join('\n'));
+ assert.equal(parsed.length,1);
+ assert.equal(parsed[0].requestId,'query-support-12');
+ assert.equal(parsed[0].executionId,'execution-33');
+ assert.equal(parsed[0].collectedAt,'2026-10-20T03:30:00.000Z');
+ assert.equal(JSON.parse(parsed[0].searchCriteria).target,'vivareal.com.br');
+ const old=ctx.parseExportCsv([
+   'source;id;type;title;link;price;usable;total;city;state',
+   ['vivareal.com.br','legacy-1','house','Casa antiga',
+    'https://www.vivareal.com.br/imovel/casa-id-1/','250000','100','150','Salto de Pirapora','SP'].map(encode).join(';')
+ ].join('\n'));
+ assert.equal(old.length,1);
+ assert.equal(old[0].collectedAt,'');
+ assert.equal(old[0].requestId,'');
+ assert.equal(old[0].searchCriteria,'');
+});
+test('Suposta duplicidade entre portais exige informações coerentes e nunca exclui um só portal por regra cross-source',()=>{
+ const a={source:'zapimoveis.com.br',type:'house',city:'Salto de Pirapora',
+   state:'SP',neighborhood:'Centro',price:300000,usable:110,beds:3,suites:1,baths:2,spaces:2};
+ const b={...a,source:'vivareal.com.br',price:301000,usable:111};
+ assert.equal(ctx.suspectedCrossPortalRepeat(a,b),true);
+ assert.equal(ctx.suspectedCrossPortalRepeat(a,{...b,suites:2}),false);
+ assert.equal(ctx.suspectedCrossPortalRepeat(a,{...b,neighborhood:'—'}),false);
+ assert.equal(ctx.suspectedCrossPortalRepeat(a,{...b,price:400000}),false);
+ assert.equal(ctx.suspectedCrossPortalRepeat(a,{...b,source:'zapimoveis.com.br'}),false);
+});
