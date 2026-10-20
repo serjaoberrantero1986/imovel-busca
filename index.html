@@ -92,6 +92,25 @@
 .review-verify{background:#f0f7ff;color:#31567e;border:1px solid #ccdfef;border-radius:8px;font-size:11px;padding:7px 10px;font-weight:700}
 @media(max-width:720px){.review-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:500px){.review-grid{grid-template-columns:1fr}.review-actions button{width:100%}}
+
+.review-state{font-size:11px;border-radius:8px;padding:5px 8px;font-weight:800;display:inline-flex;align-items:center;gap:5px;white-space:normal}
+.review-state.unread{background:#edf1f5;color:#506275}
+.review-state.viewed{background:#edf3ff;color:#365b9b}
+.review-state.confirmed{background:#e3f5e9;color:#276b45}
+.review-state.edited{background:#d9f3eb;color:#166449}
+.review-state.imported{background:#f2eafa;color:#72518f}
+.listing.review-card-viewed{border-left:5px solid #8ba9d5}
+.listing.review-card-confirmed{border-left:5px solid #39a06a;background:#f0faf4}
+.listing.review-card-edited{border-left:5px solid #138b79;background:#eaf9f5}
+.listing.review-card-imported{border-left:5px solid #a687bd}
+.listing.review-card-confirmed.selected,.listing.review-card-edited.selected{outline:1px solid #badcca}
+.eligibility-line.review-item-viewed{border-left:4px solid #8ba9d5}
+.eligibility-line.review-item-confirmed{border-left:4px solid #39a06a;background:#f4fbf6}
+.eligibility-line.review-item-edited{border-left:4px solid #138b79;background:#eefaf6}
+.eligibility-line.review-item-imported{border-left:4px solid #a687bd}
+.review-progress{font-size:12px;color:#52637a;line-height:1.6;margin:9px 0}
+.review-saved{border:1px solid #b6dbc7;background:#ecf9f0;border-radius:11px;color:#256644;font-size:13px;font-weight:750;line-height:1.6;padding:12px 15px;margin:13px 0}
+.review-error{border:1px solid #e2abab;background:#fff1f0;border-radius:9px;color:#993e42;font-size:12px;line-height:1.55;padding:11px;margin-top:12px}
 </style></head>
 <body>
 <header><div class="top"><div><div class="logo">⌖ Imóvel <b>Busca</b></div><small>Laboratório independente de pesquisa e comparação</small></div><span class="eyebrow">AMBIENTE EXPERIMENTAL</span></div></header>
@@ -257,6 +276,14 @@
     <details id="eligibility-panel" class="eligibility-details" open>
       <summary>Ver quais anúncios entraram e por que outros não entraram</summary>
       <div class="eligibility-actions">
+        <label class="field">Situação de leitura e conferência<select id="eligibility-review-filter">
+          <option value="all">Todos</option>
+          <option value="unread">Não visualizados</option>
+          <option value="viewed">Visualizados, sem confirmação</option>
+          <option value="confirmed">Conferidos sem alterações</option>
+          <option value="edited">Dados corrigidos</option>
+          <option value="imported">Conferência importada (não autenticada)</option>
+        </select></label>
         <label class="field">Mostrar resultados<select id="eligibility-filter">
           <option value="all">Todos os analisados</option>
           <option value="included">Aproveitados no cálculo</option>
@@ -265,6 +292,7 @@
         </select></label>
         <span class="muted" id="eligibility-visible-count">0 anúncios</span>
       </div>
+      <p id="review-progress" class="review-progress" aria-live="polite"></p>
       <div id="eligibility-list" class="eligibility-list"></div>
       <button id="eligibility-more" type="button" class="secondary hidden">Mostrar mais anúncios</button>
     </details>
@@ -278,6 +306,7 @@
     <p id="review-target" class="review-target"></p>
     <div id="review-evidence" class="review-evidence"></div>
     <p id="review-history" class="hint"></p>
+    <p id="review-action-error" class="review-error hidden" role="alert" aria-live="assertive"></p>
     <div class="review-grid">
       <label class="field">Preço pedido (R$)<input id="review-price" type="number" step="any" min="1" max="1000000000000" placeholder="Não informado"></label>
       <label class="field">Área útil / privativa (m²)<input id="review-usable" type="number" step="any" min="0.01" max="1000000000" placeholder="Não confirmada"></label>
@@ -299,10 +328,10 @@
       <label class="field">Qual informação foi conferida e por quê?<textarea id="review-note" rows="2" maxlength="700" placeholder="Ex.: anúncio informa expressamente área útil de 110 m² na ficha de características."></textarea></label>
     </div>
     <div class="review-actions">
-      <button id="review-save" class="primary" type="button">Salvar dados conferidos</button>
+      <button id="review-save" class="primary" type="button">Salvar conferência e voltar à lista</button>
       <button id="review-reset" class="secondary" type="button">Restaurar dados originais desta fonte</button>
     </div>
-    <p class="hint">As correções ficam nesta sessão e são registradas com valor anterior, novo valor, fonte declarada e horário. Não existe identidade profissional autenticada ou assinatura neste laboratório. O registro poderá ser exportado, mas exigirá nova conferência ao reimportar.</p>
+    <p class="hint">Você pode salvar uma conferência <strong>sem alterar números</strong>: escolha a fonte e descreva o que verificou. A revisão ficará marcada como conferida; números alterados ficam marcados como corrigidos. O histórico é mantido no navegador utilizado e pode ser exportado em CSV; dados locais não constituem autenticação ou assinatura profissional. Não há sincronização entre dispositivos.</p>
   </section>
   <div id="offer-indicator" class="offer-indicator" aria-live="polite" aria-atomic="true">
     <div class="offer-empty"><h3>Aguardando anúncios</h3><p>Selecione imóveis para comparar.</p></div>
@@ -333,6 +362,7 @@
 </div>
 <p class="hint">Filtros de metragem usam área total para terrenos e imóveis rurais e área útil para os demais. Anúncios sem essa área são excluídos apenas quando o filtro de metragem está ativo.</p></details>
 <p id="filter-status" class="muted" style="margin:0 0 12px"></p>
+<p id="review-saved" class="review-saved hidden" role="status" aria-live="polite"></p>
 <div class="selection-toolbar" aria-label="Selecionar anúncios comparáveis">
   <label class="inline selection-auto"><input id="auto-select-new" type="checkbox" checked>
     <strong>Incluir automaticamente todos os novos anúncios na triagem</strong>
