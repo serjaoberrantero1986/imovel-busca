@@ -1,6 +1,18 @@
 # Imóvel Busca — laboratório independente
 Este repositório **não** conecta ao Web Imóveis, Supabase ou domínio de produção. Não contém anúncios fictícios e não calcula valor de mercado/PTAM.
 
+## Guia rápido — três etapas, sem laudo automático
+
+**O Imóvel Busca pesquisa e ajuda a escolher comparáveis; ele ainda NÃO calcula um valor de mercado ou um PTAM.**
+
+1. **Descreva o imóvel que deseja avaliar**. Escolha tipologia, cidade e UF e informe a metragem principal: **área útil/privativa para casas, apartamentos e unidades edificadas**; **área do terreno para terrenos, chácaras e sítios**. Informe dormitórios se conhecidos. Outros atributos estão recolhidos em **Adicionar mais características**.
+2. **Adicione anúncios semelhantes**. Para reutilizar uma pesquisa, escolha o CSV exportado anteriormente e clique **Importar meus anúncios** (sem consumo de créditos). A importação JSON fica recolhida; a busca GeckoAPI está em uma aba claramente identificada como avançada e pede confirmação para gastar créditos.
+3. **Entenda sua comparação**. Marque **Comparar** nos anúncios, idealmente pelo menos dois. A tela mostra os anúncios escolhidos, seus preços pedidos e divergências frente ao imóvel de referência. O aviso **Próximo passo** orienta o que falta — inclusive quando a metragem principal não foi cadastrada. O botão de exportação permanece visível; mapa, filtros extensos, auditoria e tabela completa ficam disponíveis em painéis opcionais.
+
+**Caso real:** o usuário exportou três casas de Salto de Pirapora para a referência `Casa Ana Guilherme`, mas sem informar a **área útil** dessa casa. O resultado era `insufficient` para todos. A interface guiada explica diretamente qual campo precisa ser preenchido e mostra as diferenças de quartos, suítes, banheiros e vagas, sem apresentar isso como cálculo do valor do imóvel.
+
+Os valores em R$/m² representam somente **preços pedidos nos anúncios**. Antes de qualquer avaliação técnica, ainda é necessário verificar características, qualidade das fontes, padronização da amostra, finalidade das ofertas e metodologia aplicável. Limpar anúncios não apaga automaticamente o imóvel de referência; este continua apenas na sessão atual.
+
 ## O que funciona sem chave
 1. Abra **Importar JSON** e cole o resultado PLP/PDP fornecido pela GeckoAPI **ou** selecione um CSV anteriormente exportado pelo Imóvel Busca e clique **Importar CSV**. Nenhuma das duas ações consome créditos.
 2. Observe a triagem dos anúncios: **dados essenciais completos**, **requer conferência** ou **dados insuficientes**. A triagem verifica presença/coerência de campos, não comprova origem, veracidade ou homogeneidade.
