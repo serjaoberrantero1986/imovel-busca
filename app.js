@@ -135,14 +135,17 @@ function extractTextEvidence(title,description=''){
       if(value>0&&value<=60&&!observations.some(x=>x.field===field&&x.value===value))
         observations.push({field,value,origin,label:value+' '+label});
     }
-    const re=/\b(\d{1,5}(?:[,.]\d{1,2})?)\s*(?:m\s*(?:²|2)|metros?\s+quadrados?)\b/gi;
+    const re=/\b(\d{1,5}(?:[,.]\d{1,2})?)\s*(?:m\s*(?:²|2)|metros?\s+quadrados?)(?=\s|[,.;:!?\/-]|$)/gi;
     for(const match of raw.matchAll(re)){
       const value=Number(match[1].replace(',','.'));
       if(!Number.isFinite(value)||value<=0||value>100000)continue;
-      const nearby=canon(raw.slice(Math.max(0,match.index-38),Math.min(raw.length,match.index+match[0].length+28)));
-      const kind=/area util|area privativa/.test(nearby)?'útil/privativa':
-        /area construida/.test(nearby)?'construída':
-        /area total|terreno|lote/.test(nearby)?'terreno/total':'não especificada';
+      const left=canon(raw.slice(Math.max(0,match.index-28),match.index));
+      const right=canon(raw.slice(match.index+match[0].length,match.index+match[0].length+26));
+      const nearby=(right.match(/^(?:de )?(?:area )?(?:util|privativa|construida|total|terreno|lote)\b/)?.[0]||
+        left.match(/(?:area )?(?:util|privativa|construida|total|terreno|lote)(?: de)?\s*$/)?.[0]||'');
+      const kind=/\b(util|privativa)\b/.test(nearby)?'útil/privativa':
+        /\bconstruida\b/.test(nearby)?'construída':
+        /\b(total|terreno|lote)\b/.test(nearby)?'terreno/total':'não especificada';
       if(observations.some(x=>x.field==='area'&&x.value===value&&x.kind===kind))continue;
       observations.push({field:'area',value,kind,origin,label:match[0].trim()+
         ' ('+(kind==='não especificada'?'tipo de área não identificado': 'área '+kind)+')'});
@@ -768,7 +771,11 @@ function syncSelectionToolbar(visible){
 }
 $('select-all-visible').onclick=()=>bulkSelectVisible(true);
 $('deselect-all-visible').onclick=()=>bulkSelectVisible(false);
-$('deselect-all').onclick=()=>{selected.clear();refresh();report('Seleção de comparáveis limpa, sem apagar os anúncios ou o imóvel de referência.');};
+function clearComparableSelection(){
+  selected.clear();refresh();
+  report('Seleção de comparáveis limpa, sem apagar os anúncios ou o imóvel de referência.');
+}
+$('deselect-all').onclick=clearComparableSelection;
 $('select-all-visible-toggle').onchange=event=>bulkSelectVisible(Boolean(event.target.checked));
 
 function renderCards() {
