@@ -158,12 +158,14 @@ function showMapError(message){
   const note=$('map-error');
   if(note){note.textContent=message;note.classList.remove('hidden');}
 }
+let vectorBasemap=null;
 const hasMap=typeof window.L!=='undefined';
 if(hasMap){
   map=L.map('map',{zoomControl:true,minZoom:1,preferCanvas:false}).setView([-23.65,-47.58],12);
   if(typeof L.maplibreGL==='function'&&typeof window.maplibregl!=='undefined'){
     try{
       const baseLayer=L.maplibreGL({style:BASEMAP_STYLE}).addTo(map);
+      vectorBasemap=baseLayer;
       // Attribution is required even when the MapLibre style is shown via Leaflet.
       map.attributionControl.addAttribution(BASEMAP_ATTRIBUTION);
       const vectorMap=baseLayer.getMaplibreMap?.();
@@ -918,6 +920,11 @@ $('export-btn').onclick=()=>{
   const a=document.createElement('a');a.href=object;a.download='comparaveis-imovel-busca.csv';a.click();setTimeout(()=>URL.revokeObjectURL(object),1200);
 };
 $('map-extra').addEventListener('toggle',()=>{
-  if(map){map.invalidateSize();drawMap(false);}
+  if(map&&$('map-extra').open){
+    // A camada MapLibre inicia enquanto o painel opcional está recolhido.
+    map.invalidateSize();
+    vectorBasemap?.getMaplibreMap?.()?.resize?.();
+    drawMap(false);
+  }
 });
 refresh();
