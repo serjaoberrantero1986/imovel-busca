@@ -9,7 +9,7 @@ function el(id){
 }
 const doc={getElementById:el,createElement(){return {value:'',textContent:'',innerHTML:'',classList:{toggle(){}},querySelector(){return {}},appendChild(){}}}};
 const src=readFileSync(new URL('../app.js',import.meta.url),'utf8');
-const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords,guideAdvice,renderGuidedSummary,selected,computeOfferIndicator,renderOfferIndicator,inferOfferPurpose,setReferenceForTest:reference=>{referenceProfile=reference},planMixedSearch,mixedTargets,executeMixedSearch,performMixedSearch,suspectedCrossPortalRepeat,bulkSelectVisible,syncSelectionToolbar,extractTextEvidence,clearComparableSelection})',{document:doc,window:{},console,URL});
+const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords,guideAdvice,renderGuidedSummary,selected,computeOfferIndicator,renderOfferIndicator,inferOfferPurpose,setReferenceForTest:reference=>{referenceProfile=reference},planMixedSearch,mixedTargets,executeMixedSearch,performMixedSearch,suspectedCrossPortalRepeat,bulkSelectVisible,syncSelectionToolbar,extractTextEvidence,clearComparableSelection,summarizeEligibility,renderEligibility})',{document:doc,window:{},console,URL});
 test('VivaReal PLP: preços em array e coordenadas aninhadas',()=>{
   const x=ctx.payload({data:{source:'vivareal.com.br',items:[{
     id:'100',title:'Casa à venda',unitTypes:['HOME'],
@@ -855,4 +855,74 @@ test('CSV com campo adicional textEvidence preserva indícios e CSV antigo extra
   data.slice(0,10).map(encode).join(';')
  ].join('\n'))[0];
  assert.ok(legacy.textEvidence.some(e=>e.field==='area'&&e.value===333));
+});
+
+
+test('Seleção automática: novos anúncios entram na triagem sem cliques, sem reverter desmarcação manual',()=>{
+ ctx.records.length=0;ctx.selected.clear();
+ el('auto-select-new').checked=true;
+ const base={source:'olx.com.br',type:'house',city:'Salto de Pirapora',state:'SP',
+   price:300000,usable:110,total:null,beds:3,suites:1,baths:2,spaces:2,
+   neighborhood:'Centro',lat:null,lng:null,title:'Casa teste',amenities:[]};
+ const a={...base,key:'olx.com.br:one',id:'one'};
+ const b={...base,key:'olx.com.br:two',id:'two'};
+ ctx.loadNormalized([a,b]);
+ assert.equal(ctx.selected.size,2);
+ ctx.selected.delete(a.key);
+ ctx.loadNormalized([{...a,title:'Casa atualizada'}]);
+ assert.equal(ctx.selected.has(a.key),false,'Atualização não pode reativar anúncio desmarcado manualmente');
+ assert.equal(ctx.selected.has(b.key),true);
+ el('auto-select-new').checked=false;
+ ctx.loadNormalized([{...base,key:'olx.com.br:three',id:'three'}]);
+ assert.equal(ctx.selected.size,1,'Novas ofertas não são auto selecionadas quando opção foi desmarcada');
+ el('auto-select-new').checked=true;
+ ctx.records.length=0;ctx.selected.clear();
+});
+test('Triagem automática: inclui, exclui e sinaliza pendências com motivo individual',()=>{
+ const r=ctx.makeReference({type:'house',city:'Salto de Pirapora',state:'SP',
+   usable:110,tolerance:20});
+ const base={source:'olx.com.br',type:'house',city:'Salto de Pirapora',state:'SP',
+   usable:110,price:300000,neighborhood:'Centro',lat:null,lng:null,total:null,
+   beds:3,suites:1,baths:2,spaces:2};
+ const chosen=[
+  {...base,key:'olx:ok1',id:'ok1',title:'Casa com dados 1'},
+  {...base,key:'olx:ok2',id:'ok2',title:'Casa com dados 2',price:310000},
+  {...base,key:'olx:missing',id:'missing',title:'Casa com 130 m² de construção',usable:null,
+    textEvidence:ctx.extractTextEvidence('Casa com 130 m² de construção')},
+  {...base,key:'olx:other',id:'other',title:'Casa em outro município',city:'Sorocaba'},
+  {...base,key:'olx:huge',id:'huge',title:'Casa com 450 m²',usable:450},
+  {...base,key:'olx:bad',id:'bad',title:'Casa dados contraditórios',total:1}
+ ];
+ const result=ctx.computeOfferIndicator(r,chosen);
+ const triage=ctx.summarizeEligibility(result,chosen);
+ assert.equal(result.status,'ready');
+ assert.equal(triage.total,6);
+ assert.equal(triage.counts.included,2);
+ assert.equal(triage.counts.pending,2);
+ assert.equal(triage.counts.excluded,2);
+ assert.equal(result.included.length,2);
+ assert.ok(triage.rows.some(x=>x.key==='olx:missing'&&x.classification==='pending'&&
+   x.reason.includes('O texto menciona')));
+ assert.ok(triage.rows.some(x=>x.key==='olx:bad'&&x.classification==='pending'&&
+   x.reason.includes('Área útil maior')));
+ assert.ok(triage.rows.some(x=>x.key==='olx:other'&&x.classification==='excluded'));
+ assert.ok(triage.rows.some(x=>x.key==='olx:huge'&&x.classification==='excluded'));
+});
+test('Triagem: mesmo um único anúncio recebe motivo de exclusão ou pendência sem mostrar valor',()=>{
+ const r=ctx.makeReference({type:'house',city:'Salto de Pirapora',state:'SP',usable:100});
+ const p={key:'one',type:'house',city:'Salto de Pirapora',state:'SP',price:300000,usable:null};
+ const indicator=ctx.computeOfferIndicator(r,[p]);
+ assert.equal(indicator.status,'unavailable');
+ assert.equal(indicator.included.length,0);
+ assert.equal(indicator.excluded.length,1);
+ assert.equal(ctx.summarizeEligibility(indicator,[p]).counts.pending,1);
+ assert.equal(indicator.value,null);
+});
+test('Interface: a triagem padrão e seus detalhes acompanham toda a seleção',()=>{
+ const html=readFileSync(new URL('../index.html',import.meta.url),'utf8');
+ assert.match(html,/id="auto-select-new" type="checkbox" checked/);
+ for(const id of ['eligibility-overview','eligibility-summary','eligibility-list',
+   'eligibility-filter','eligibility-more','show-more-cards']){
+   assert.match(html,new RegExp('id="'+id+'"'));
+ }
 });
