@@ -1289,7 +1289,7 @@ function loadNormalized(items,total=null,detailed=false){
           continue;
         }
         // Histórico local não é substituído por metadados da nova consulta.
-        if(['reviewHistory','manualOverrides','providerSnapshot','reviewImported','providerConflicts'].includes(key))
+        if(['reviewHistory','reviewConfirmation','viewedAt','manualOverrides','providerSnapshot','reviewImported','providerConflicts'].includes(key))
           continue;
         update[key]=val;
       }
@@ -1297,7 +1297,7 @@ function loadNormalized(items,total=null,detailed=false){
       records[idx]=update;
     } else {
       known.set(p.key,records.length);
-      records.push({...p,detailed});
+      records.push(restoreBrowserReview({...p,detailed}));
       if($('auto-select-new').checked)selected.add(p.key);
     }
   }
@@ -1348,6 +1348,10 @@ function parseExportCsv(raw){
     const valid=latitude!==null&&longitude!==null&&Math.abs(latitude)<=90&&Math.abs(longitude)<=180&&(latitude!==0||longitude!==0);
     const neighborhood=row.neighborhood?.trim()||'—';
     const importedReviewHistory=parseImportedHistory(row.reviewHistory);
+    let importedConfirmation=null;
+    if(typeof row.reviewConfirmation==='string'&&row.reviewConfirmation.length<2000){
+      try{importedConfirmation=validateReviewConfirmation(JSON.parse(row.reviewConfirmation));}catch{/* Inválido */}
+    }
     const record={
       source,id:id||link,key:source+':'+(id||link),type,
       offerPurpose:inferOfferPurpose({...row,link}),
@@ -1368,7 +1372,10 @@ function parseExportCsv(raw){
       lat:valid?latitude:null,lng:valid?longitude:null,approx:row.approx?.trim().toLowerCase()==='true',
       advertiser:row.advertiser?.trim()||'—',description:'—',amenities:[],detailed:false,
       reviewHistory:importedReviewHistory,
-      reviewImported:importedReviewHistory.length>0,
+      reviewConfirmation:importedConfirmation,
+      viewedAt:typeof row.reviewViewedAt==='string'&&/^d{4}-dd-ddT/.test(row.reviewViewedAt)?
+        row.reviewViewedAt:null,
+      reviewImported:importedReviewHistory.length>0||Boolean(importedConfirmation),
       providerSnapshot:null,manualOverrides:{},providerConflicts:{}
     };
     return record;
@@ -1862,7 +1869,7 @@ for(const id of ['in-radius','min-beds','dedupe','result-type','quality-filter',
 }
 $('export-btn').onclick=()=>{
   const picked=records.filter(p=>selected.has(p.key));if(picked.length<2)return;
-  const fields=['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','textEvidence','reviewHistory','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser',
+  const fields=['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','textEvidence','reviewHistory','reviewConfirmation','reviewViewedAt','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser',
     'ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_area_m2','ref_area_tolerance_percent','ref_status','ref_reasons'];
   const derived=p=>{
     const r=referenceProfile,m=assessReference(r,p),land=r&&['land','farm'].includes(r.type);
@@ -1874,10 +1881,12 @@ $('export-btn').onclick=()=>{
       ref_area_tolerance_percent:r?.tolerance??'',ref_status:m?.status??'',
       ref_reasons:m?.issues.join(' | ')??'',
       textEvidence:JSON.stringify(p.textEvidence??[]),
-      reviewHistory:JSON.stringify((p.reviewHistory||[]).slice(-60))
+      reviewHistory:JSON.stringify((p.reviewHistory||[]).slice(-60)),
+      reviewConfirmation:JSON.stringify(p.reviewConfirmation||null),
+      reviewViewedAt:p.viewedAt||''
     };
   };
-  const formulaSensitive=new Set(['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','textEvidence','reviewHistory','title','link','neighborhood','city','state','advertiser','ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_status','ref_reasons']);
+  const formulaSensitive=new Set(['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','textEvidence','reviewHistory','reviewConfirmation','reviewViewedAt','title','link','neighborhood','city','state','advertiser','ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_status','ref_reasons']);
   const csvValue=(key,value)=>{
     const raw=String(value??'');
     // Protege a abertura do CSV em planilhas contra fórmulas injetadas em
