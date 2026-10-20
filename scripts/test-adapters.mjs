@@ -9,7 +9,7 @@ function el(id){
 }
 const doc={getElementById:el,createElement(){return {value:'',textContent:'',innerHTML:'',classList:{toggle(){}},querySelector(){return {}},appendChild(){}}}};
 const src=readFileSync(new URL('../app.js',import.meta.url),'utf8');
-const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels})',{document:doc,window:{},console,URL});
+const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords})',{document:doc,window:{},console,URL});
 test('VivaReal PLP: preços em array e coordenadas aninhadas',()=>{
   const x=ctx.payload({data:{source:'vivareal.com.br',items:[{
     id:'100',title:'Casa à venda',unitTypes:['HOME'],
@@ -255,4 +255,37 @@ test('Classificação de fornecedores: não misturar flats, kitnets e sobrados c
  assert.equal(ctx.classify({unitTypes:['TWO_STORY_HOUSE']}),'two_story_house');
  assert.equal(ctx.classify({property:{type:'Ponto comercial'}}),'commercial_point');
  assert.equal(ctx.classify({title:'Casa em Chácaras Parque Pirapora'}),'house');
+});
+
+test('Interface: salvar referência reclassifica registros, filtra e limpa sem descartar anúncios',()=>{
+ ctx.records.length=0;
+ const source='vivareal.com.br';
+ const same=ctx.normalized({
+   id:'reference-ui-1',unitTypes:['HOME'],title:'Casa de teste',
+   address:{city:'Salto de Pirapora',stateAcronym:'SP'},
+   attributes:{usableAreas:[120]},prices:[{businessType:'SALE',value:300000}]
+ },source);
+ const other=ctx.normalized({
+   id:'reference-ui-2',unitTypes:['HOME'],title:'Casa em outro município',
+   address:{city:'Sorocaba',stateAcronym:'SP'},
+   attributes:{usableAreas:[120]},prices:[{businessType:'SALE',value:300000}]
+ },source);
+ ctx.loadNormalized([same,other]);
+ el('ref-name').value='Casa referencial';
+ el('ref-type').value='house';
+ el('ref-city').value='Salto de Pirapora';
+ el('ref-state').value='SP';
+ el('ref-usable').value='120';
+ el('ref-tolerance').value='20';
+ el('reference-save').onclick();
+ assert.match(el('ref-summary').textContent,/Casa referencial/);
+ assert.equal(el('reference-filter').disabled,false);
+ el('reference-filter').value='compatible';
+ assert.deepEqual(Array.from(ctx.visibleRecords(),p=>p.id),['reference-ui-1']);
+ el('reference-filter').value='incompatible';
+ assert.deepEqual(Array.from(ctx.visibleRecords(),p=>p.id),['reference-ui-2']);
+ el('reference-clear').onclick();
+ assert.equal(el('reference-filter').disabled,true);
+ assert.equal(ctx.visibleRecords().length,2);
+ ctx.records.length=0;
 });
