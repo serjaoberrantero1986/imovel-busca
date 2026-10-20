@@ -145,13 +145,49 @@ function payload(input) {
 function report(message, error=false) { $('status').textContent = message; $('status').className = error ? 'status error' : 'status'; }
 const validPoint = p => p&&Number.isFinite(p.lat)&&Number.isFinite(p.lng)&&Math.abs(p.lat)<=90&&Math.abs(p.lng)<=180&&(p.lat!==0||p.lng!==0);
 function distance(a,b) { if (!a || !validPoint(b)) return null; const rad = Math.PI/180, dLat=(b.lat-a.lat)*rad, dLon=(b.lng-a.lng)*rad; const z = Math.sin(dLat/2)**2 + Math.cos(a.lat*rad)*Math.cos(b.lat*rad)*Math.sin(dLon/2)**2; return 12742.018*Math.asin(Math.min(1,Math.sqrt(z))); }
-const hasMap = typeof window.L !== 'undefined';
-if (hasMap) {
-  map = L.map('map', {zoomControl:true}).setView([-23.65,-47.58],12);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap contributors',maxZoom:19}).addTo(map);
-  layer = L.layerGroup().addTo(map);
-  setTimeout(() => map.invalidateSize(),200);
-} else {report('Não foi possível carregar o mapa. Confira a conexão e tente novamente.',true);}
+// OSMF não permite usar seus servidores comunitários como CDN de mapas para
+// aplicativos públicos sem respeitar estritamente a política de tiles.
+// OpenFreeMap distribui mapas vetoriais próprios baseados no OpenStreetMap,
+// permite uso comercial e não exige chave, sem SLA garantido.
+// MapLibre GL é integrado ao Leaflet para preservar o círculo, marcadores e raio.
+const BASEMAP_STYLE='https://tiles.openfreemap.org/styles/positron';
+const BASEMAP_ATTRIBUTION='<a href="https://openfreemap.org/" target="_blank" rel="noopener noreferrer">OpenFreeMap</a> · '+
+  '<a href="https://openmaptiles.org/" target="_blank" rel="noopener noreferrer">© OpenMapTiles</a> · '+
+  '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>';
+function showMapError(message){
+  const note=$('map-error');
+  if(note){note.textContent=message;note.classList.remove('hidden');}
+}
+let vectorBasemap=null;
+const hasMap=typeof window.L!=='undefined';
+if(hasMap){
+  map=L.map('map',{zoomControl:true,minZoom:1,preferCanvas:false}).setView([-23.65,-47.58],12);
+  if(typeof L.maplibreGL==='function'&&typeof window.maplibregl!=='undefined'){
+    try{
+      const baseLayer=L.maplibreGL({style:BASEMAP_STYLE}).addTo(map);
+      vectorBasemap=baseLayer;
+      // Attribution is required even when the MapLibre style is shown via Leaflet.
+      map.attributionControl.addAttribution(BASEMAP_ATTRIBUTION);
+      const vectorMap=baseLayer.getMaplibreMap?.();
+      if(vectorMap){
+        vectorMap.on('error',event=>{
+          // Mantenha os anúncios/marcadores visíveis se o basemap falhar.
+          const msg=String(event?.error?.message||'');
+          if(/style|source|network|fetch|http|failed|cors|403|404/i.test(msg))
+            showMapError('O mapa de fundo está indisponível no momento. Os anúncios continuam na lista; tente atualizar a página. Detalhe técnico: '+msg.slice(0,180));
+        });
+      }
+    }catch(error){
+      showMapError('Não foi possível iniciar o mapa de fundo. Os anúncios continuam disponíveis. Detalhe: '+String(error.message||error).slice(0,160));
+    }
+  }else{
+    showMapError('O componente do mapa não carregou. Verifique sua conexão e atualize a página. Os comparáveis permanecem disponíveis na lista.');
+  }
+  layer=L.layerGroup().addTo(map);
+  setTimeout(()=>map.invalidateSize(),200);
+}else {
+  showMapError('Não foi possível carregar a biblioteca do mapa. Confira a conexão e tente novamente.');
+}
 function reviewComparable(p) {
   const missing=[],warnings=[];
   if(p.price===null||!Number.isFinite(p.price)||p.price<=0)missing.push('Preço pedido não informado ou inválido');
@@ -884,6 +920,11 @@ $('export-btn').onclick=()=>{
   const a=document.createElement('a');a.href=object;a.download='comparaveis-imovel-busca.csv';a.click();setTimeout(()=>URL.revokeObjectURL(object),1200);
 };
 $('map-extra').addEventListener('toggle',()=>{
-  if(map){map.invalidateSize();drawMap(false);}
+  if(map&&$('map-extra').open){
+    // A camada MapLibre inicia enquanto o painel opcional está recolhido.
+    map.invalidateSize();
+    vectorBasemap?.getMaplibreMap?.()?.resize?.();
+    drawMap(false);
+  }
 });
 refresh();

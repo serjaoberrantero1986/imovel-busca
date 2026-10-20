@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 const els=new Map();
 function el(id){
-  if(!els.has(id))els.set(id,{value:id==='radius'?'5':'',checked:false,disabled:false,innerHTML:'',textContent:'',classList:{toggle(){},add(){}},children:[],addEventListener(){},replaceChildren(){},appendChild(){},querySelector(){return {}}});
+  if(!els.has(id))els.set(id,{value:id==='radius'?'5':'',checked:false,disabled:false,innerHTML:'',textContent:'',classList:{toggle(){},add(){},remove(){}},children:[],addEventListener(){},replaceChildren(){},appendChild(){},querySelector(){return {}}});
   return els.get(id);
 }
 const doc={getElementById:el,createElement(){return {value:'',textContent:'',innerHTML:'',classList:{toggle(){}},querySelector(){return {}},appendChild(){}}}};
@@ -387,4 +387,63 @@ test('Interface simplificada: referência, arquivo e resultado seguem três pass
  assert.match(html,/1\. Descreva o imóvel/);
  assert.match(html,/2\. Adicione anúncios semelhantes/);
  assert.match(html,/3\. Entenda sua comparação/);
+});
+
+
+test('Mapa: usa OpenFreeMap em vez de tiles OSM bloqueados e mantém integração Leaflet',()=>{
+  const html=readFileSync(new URL('../index.html',import.meta.url),'utf8');
+  assert.match(html,/maplibre-gl@5\.8\.0\/dist\/maplibre-gl\.js/);
+  assert.match(html,/@maplibre\/maplibre-gl-leaflet@0\.0\.22\/leaflet-maplibre-gl\.js/);
+  assert.match(html,/id="map-error"/);
+  assert.doesNotMatch(html,/tile\.openstreetmap\.org/);
+  assert.doesNotMatch(src,/tile\.openstreetmap\.org/);
+  let style=null,credit='',events=[];
+  const fakeMap={
+    attributionControl:{addAttribution(v){credit=v;}},
+    setView(){return this;},on(){return this;},invalidateSize(){},removeLayer(){},
+    fitBounds(){return this;}
+  };
+  const L={
+    map(){return fakeMap;},
+    maplibreGL(config){style=config.style;return {
+      addTo(){return this;},
+      getMaplibreMap(){return {on(name,cb){events.push(name);}};}
+    };},
+    layerGroup(){return {addTo(){return this;},clearLayers(){}}}
+  };
+  const loaded=runInNewContext(src+';({map,BASEMAP_STYLE,layer,center})',{
+    document:doc,L,window:{L,maplibregl:{}},console,URL,
+    setTimeout(){},fetch(){}
+  });
+  assert.equal(loaded.map,fakeMap);
+  assert.equal(loaded.BASEMAP_STYLE,'https://tiles.openfreemap.org/styles/positron');
+  assert.equal(style,loaded.BASEMAP_STYLE);
+  assert.match(credit,/OpenStreetMap contributors/);
+  assert.match(credit,/OpenMapTiles/);
+  assert.match(credit,/OpenFreeMap/);
+  assert.ok(events.includes('error'));
+  assert.ok(loaded.layer);
+});
+
+test('Mapa: falta do plugin não deve impedir a lista de comparáveis',()=>{
+  let warned=false;
+  const L={
+    map(){return {setView(){return this;},attributionControl:{addAttribution(){}},on(){},invalidateSize(){}};},
+    layerGroup(){return {addTo(){return this;},clearLayers(){}}}
+  };
+  const localEl=id=>({
+    ...el(id),
+    classList:{toggle(){},add(){},remove(){if(id==='map-error')warned=true;}},
+    addEventListener(){},removeAttribute(){}
+  });
+  const elements=new Map();
+  const localDoc={
+    getElementById(id){if(!elements.has(id))elements.set(id,localEl(id));return elements.get(id);},
+    createElement:doc.createElement
+  };
+  const app=runInNewContext(src+';({records,visibleRecords})',{
+    document:localDoc,L,window:{L},console,URL,setTimeout(){}
+  });
+  assert.equal(app.visibleRecords().length,0);
+  assert.equal(warned,true);
 });

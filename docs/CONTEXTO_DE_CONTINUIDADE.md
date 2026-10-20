@@ -153,3 +153,11 @@ Após cadastrar `Casa Ana Guilherme` e exportar três anúncios selecionados, o 
 **Alteração:** reorganizar laboratório em três etapas visíveis — (1) cadastrar referência com destaque à metragem principal; (2) importar CSV por padrão, com JSON/API como opção técnica; (3) ler orientação e resumo legível dos anúncios escolhidos. Mapa, filtros extensos, auditoria e tabela detalhada continuam acessíveis, porém recolhidos por padrão. Aviso claro sobre área ausente, sem gerar preços artificiais. Documentação e testes verificam que IDs funcionais não foram perdidos.
 
 **Restrições:** mudar somente `imovel-busca`. Não consultar GeckoAPI com créditos e não editar `imovel-hub`. As melhorias devem ser validadas no CI e na Vercel.
+
+## 11. Substituição do fundo cartográfico após HTTP 403 — 2026-10-20
+
+Imagem enviada pelo usuário mostrou `Access blocked` em todos os tiles da OpenStreetMap Foundation, enquanto marcadores e círculo Leaflet continuavam visíveis. A causa é o bloqueio/política de uso do servidor gratuito de tiles, não os dados dos comparáveis nem a GeckoAPI.
+
+A branch `fix/openfreemap-basemap-20261020` substitui exclusivamente o **basemap**: integra OpenFreeMap Positron (vetorial) via MapLibre GL JS e adaptador Leaflet, com atribuição visível e aviso quando a camada não carrega. O objetivo é preservar Leaflet, IDs da UI, marcadores, centro arrastável, raios, distâncias, seleção e CSV. Não usar outros domínios OSMF como forma de contornar bloqueio. Documentação do fornecedor: https://openfreemap.org/quick_start/ (uso comercial permitido, sem chave de API, sem SLA). Para escala/garantias comerciais, considerar tiles próprios ou fornecedor contratado.
+
+CSV real do usuário: três registros selecionados, dois geolocalizados e um sem coordenadas. `ref_area_m2=110` e `ref_status=review` para os três imóveis da Casa Ana Guilherme. Nenhuma consulta autenticada adicional à GeckoAPI, nem mudança em `imovel-hub`.
