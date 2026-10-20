@@ -1,6 +1,22 @@
 # Imóvel Busca — laboratório independente
 Este repositório **não** conecta ao Web Imóveis, Supabase ou domínio de produção. Não contém anúncios fictícios e não calcula valor de mercado/PTAM.
 
+## Fluxo de conferência e indicação de anúncios lidos
+
+Depois de importar a pesquisa, os anúncios são marcados visualmente conforme **o estado da conferência**, independente da elegibilidade para o indicativo:
+
+- **Não visualizado (cinza):** o corretor ainda não abriu o formulário deste anúncio.
+- **Visualizado, sem confirmar (azul):** o formulário foi aberto, mas nada foi confirmado.
+- **Conferido sem alterações (verde):** o corretor indicou uma fonte e uma justificativa e salvou sem mudar números.
+- **Dados corrigidos (verde-azulado):** o corretor alterou um ou mais campos com evidência declarada e justificativa.
+- **Conferência importada (roxo):** CSV traz histórico de revisão não autenticado; não equivale a conferência realizada nesta sessão.
+
+Abra **Conferir dados**, verifique a ficha e informe a **origem** e uma justificativa com pelo menos 12 caracteres. O botão **Salvar conferência e voltar à lista** aceita tanto a correção de números quanto a conferência sem alterações. Ao salvar, o painel fecha, a lista reaparece com marcação visual, uma confirmação de sucesso aparece junto à lista e o indicativo é recalculado. Se houver erro, a explicação surge no **próprio formulário**, que permanece aberto. O filtro **Situação de leitura e conferência** e o contador permitem trabalhar primeiro nos anúncios ainda não visualizados.
+
+**Persistência limitada:** revisões e marcações são guardadas no armazenamento local do navegador, vinculadas a fonte/ID/link/cidade/UF. Ao reimportar anúncios idênticos no **mesmo navegador**, elas são recuperadas sem consulta paga. O navegador pode bloquear/limpar essa gravação; nesse caso, exporte o CSV. Não existe armazenamento compartilhado entre usuários ou computadores, autenticação de autoria ou assinatura. Para apagar essas revisões, use **Gerenciar conferências guardadas neste navegador**; isso não altera a sessão aberta, apenas evita recuperar as marcações numa próxima importação.
+
+A exportação CSV opcional mantém `reviewHistory`, `reviewConfirmation` e `reviewViewedAt`. Conferências reimportadas são explicitamente **não autenticadas**. Uma revisão sem alterações pode deixar de valer se a fonte publicar dados diferentes em uma próxima consulta; novas discrepâncias são sinalizadas. A revisão permanece uma **evidência operacional**, não aprovação profissional automática nem PTAM.
+
 ## Conferência assistida dos anúncios (sem IA visual nesta etapa)
 
 O objetivo desta fase é **reduzir o número de verificações manuais**, não eliminar a responsabilidade do corretor. A triagem inicial continua automática. Para anúncios pendentes, clique **Conferir dados** na lista de razões ou **Conferir/corrigir dados** no card de imóvel. A tela abre um formulário único com os números atuais, indícios numéricos do título/descrição e, se disponível, o link ao anúncio original.

@@ -9,7 +9,7 @@ function el(id){
 }
 const doc={getElementById:el,createElement(){return {value:'',textContent:'',innerHTML:'',classList:{toggle(){}},querySelector(){return {}},appendChild(){}}}};
 const src=readFileSync(new URL('../app.js',import.meta.url),'utf8');
-const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords,guideAdvice,renderGuidedSummary,selected,computeOfferIndicator,renderOfferIndicator,inferOfferPurpose,setReferenceForTest:reference=>{referenceProfile=reference},planMixedSearch,mixedTargets,executeMixedSearch,performMixedSearch,suspectedCrossPortalRepeat,bulkSelectVisible,syncSelectionToolbar,extractTextEvidence,clearComparableSelection,summarizeEligibility,renderEligibility,applyReviewChanges,restoreProviderFields,parseImportedHistory,openReview,closeReview,reviewTarget})',{document:doc,window:{},console,URL});
+const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords,guideAdvice,renderGuidedSummary,selected,computeOfferIndicator,renderOfferIndicator,inferOfferPurpose,setReferenceForTest:reference=>{referenceProfile=reference},planMixedSearch,mixedTargets,executeMixedSearch,performMixedSearch,suspectedCrossPortalRepeat,bulkSelectVisible,syncSelectionToolbar,extractTextEvidence,clearComparableSelection,summarizeEligibility,renderEligibility,applyReviewChanges,restoreProviderFields,parseImportedHistory,openReview,closeReview,reviewTarget,reviewState,reviewBadge,saveBrowserReview,restoreBrowserReview})',{document:doc,window:{},console,URL});
 test('VivaReal PLP: preços em array e coordenadas aninhadas',()=>{
   const x=ctx.payload({data:{source:'vivareal.com.br',items:[{
     id:'100',title:'Casa à venda',unitTypes:['HOME'],
@@ -991,8 +991,11 @@ test('Conferência: não aceita fontes ou justificativas inválidas e valida cam
    'A ficha do anúncio informa a área privativa.'),/Área útil/);
  assert.throws(()=>ctx.applyReviewChanges(p,{...form,beds:'2.4'},'listing',
    'Conferi a ficha de dormitórios do anúncio.'),/Dormitórios/);
- assert.throws(()=>ctx.applyReviewChanges(p,
-   {...form,usable:'100'},'listing','Conferi a ficha e confirmei os dados.'),/Nenhum campo/);
+ const confirmed=ctx.applyReviewChanges(p,
+   {...form,usable:'100'},'listing','Conferi a ficha e confirmei os dados.');
+ assert.equal(ctx.reviewState(confirmed),'confirmed');
+ assert.equal(confirmed.reviewConfirmation.changes,0);
+ assert.equal(confirmed.reviewHistory.at(-1).field,'verification');
  const good=ctx.applyReviewChanges(p,form,'listing',
    'Conferi a metragem privativa na ficha do anúncio.');
  assert.equal(good.usable,110);
@@ -1064,4 +1067,97 @@ test('Conferência: a tela oferece revisão de dados em cards e painel de elegib
  assert.equal(el('review-panel').classList!==undefined,true);
  ctx.closeReview();
  ctx.records.length=0;
+});
+
+
+test('Revisão distingue anúncio não lido, lido, confirmado, corrigido e importado',()=>{
+ const p={key:'portal:1',price:250000,usable:100,total:200,beds:3,suites:1,baths:2,spaces:2};
+ const f={price:'250000',usable:'100',total:'200',beds:'3',suites:'1',baths:'2',spaces:'2'};
+ assert.equal(ctx.reviewState(p),'unread');
+ assert.equal(ctx.reviewState({...p,viewedAt:'2026-10-20T12:00:00Z'}),'viewed');
+ const confirmed=ctx.applyReviewChanges(p,f,'listing','Conferi os dados da ficha sem divergências.');
+ assert.equal(ctx.reviewState(confirmed),'confirmed');
+ assert.equal(confirmed.reviewHistory.at(-1).field,'verification');
+ const changed=ctx.applyReviewChanges(p,{...f,usable:'120'},'listing',
+   'A ficha original confirma a área útil de cento e vinte metros.');
+ assert.equal(ctx.reviewState(changed),'edited');
+ assert.equal(ctx.reviewState({...changed,reviewImported:true}),'imported');
+ assert.equal(ctx.reviewState(ctx.restoreProviderFields(changed)),'viewed');
+ assert.match(ctx.reviewBadge(changed),/Dados corrigidos/);
+ assert.equal(ctx.parseImportedHistory(JSON.stringify([confirmed.reviewHistory.at(-1)]))[0].field,'verification');
+});
+
+test('Fluxo real de salvar fecha painel, recalcula e recupera conferências após nova importação',()=>{
+ const elements=new Map(),store=new Map();
+ function element(id){
+   if(elements.has(id))return elements.get(id);
+   const classes=new Set(id==='review-panel'?['hidden']:[]);
+   const node={
+     value:id==='radius'?'5':'',textContent:'',innerHTML:'',checked:id==='auto-select-new',
+     disabled:false,children:[],dataset:{},open:false,
+     classList:{add(x){classes.add(x);},remove(x){classes.delete(x);},
+       toggle(x,force){if(force===undefined?!classes.has(x):force)classes.add(x);else classes.delete(x);},
+       contains(x){return classes.has(x);}},
+     addEventListener(){},replaceChildren(){this.children=[];},
+     appendChild(x){this.children.push(x);return x;},scrollIntoView(){},
+     querySelector(){return {checked:false};},querySelectorAll(){return [];}
+   };
+   elements.set(id,node);return node;
+ }
+ const document={getElementById:element,createElement(){return {
+   classList:{add(){},remove(){},toggle(){}},querySelector(){return {}},appendChild(){},
+   innerHTML:'',textContent:'',value:'',dataset:{}
+ }}};
+ const window={localStorage:{
+   getItem(k){return store.get(k)??null;},setItem(k,v){store.set(k,v);},
+   removeItem(k){store.delete(k);}
+ }};
+ const init=()=>runInNewContext(src+';({records,openReview,loadNormalized,reviewState})',
+   {document,window,console,URL});
+ const input={
+   key:'olx.com.br:120',id:'120',source:'olx.com.br',
+   link:'https://www.olx.com.br/imoveis/120',title:'Casa de teste',
+   type:'house',city:'Salto de Pirapora',state:'SP',price:320000,
+   usable:100,total:200,beds:3,suites:1,baths:2,spaces:2,
+   neighborhood:'Centro',textEvidence:[],amenities:[],lat:null,lng:null
+ };
+ const a=init();a.loadNormalized([input]);
+ a.openReview(input.key,'cards');
+ assert.equal(a.reviewState(a.records[0]),'viewed');
+ assert.equal(element('review-panel').classList.contains('hidden'),false);
+ element('review-source').value='listing';
+ element('review-note').value='Revisei todos os números na ficha do anúncio.';
+ element('review-save').onclick();
+ assert.equal(element('review-panel').classList.contains('hidden'),true);
+ assert.equal(a.reviewState(a.records[0]),'confirmed');
+ assert.match(element('review-saved-cards').textContent,/conferido sem alterações/);
+ assert.match(element('results').children[0].innerHTML,/Conferido sem alterações/);
+ a.records.length=0;
+ const b=init();b.loadNormalized([input]);
+ assert.equal(b.reviewState(b.records[0]),'confirmed');
+ b.openReview(input.key,'eligibility');
+ element('review-usable').value='115';
+ element('review-source').value='listing';
+ element('review-note').value='Conferi área útil de 115 m² no anúncio completo.';
+ element('review-save').onclick();
+ assert.equal(element('review-panel').classList.contains('hidden'),true);
+ assert.equal(b.reviewState(b.records[0]),'edited');
+ assert.equal(b.records[0].usable,115);
+ assert.match(element('review-saved').textContent,/Dados corrigidos/);
+ assert.match(element('review-progress').textContent,/Corrigidos: 1/);
+ b.records.length=0;
+ const c=init();c.loadNormalized([input]);
+ assert.equal(c.records[0].usable,115);
+ assert.equal(c.reviewState(c.records[0]),'edited');
+ assert.equal(c.records[0].providerSnapshot.usable,100);
+});
+
+test('Conferência: painel informa erros no local e permite filtro de não lidos',()=>{
+ const html=readFileSync(new URL('../index.html',import.meta.url),'utf8');
+ for(const id of ['review-action-error','review-saved','review-saved-cards',
+   'eligibility-review-filter','review-progress','clear-browser-reviews'])
+   assert.match(html,new RegExp('id="'+id+'"'));
+ assert.match(html,/Salvar conferência e voltar à lista/);
+ assert.match(html,/Não visualizados/);
+ assert.match(html,/Dados corrigidos/);
 });

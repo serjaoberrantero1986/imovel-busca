@@ -563,7 +563,141 @@ const REVIEW_FIELDS={
   spaces:{label:'Vagas',min:0,max:1000,integer:true}
 };
 const REVIEW_SOURCES=new Set(['listing','title','description','document','contact']);
+
+const REVIEW_STATE_LABELS={
+  unread:'○ Não visualizado',viewed:'◉ Visualizado, sem confirmar',
+  confirmed:'✓ Conferido sem alterações',edited:'✓ Dados corrigidos',
+  imported:'◈ Conferência importada (não autenticada)'
+};
+const REVIEW_LOCAL_KEY='imovel-busca.revisoes-local-v1';
+function reviewState(p){
+  if(!p)return 'unread';
+  if(p.reviewImported&&(p.reviewHistory?.length||p.reviewConfirmation))return 'imported';
+  if(p.reviewConfirmation)
+    return Object.keys(p.manualOverrides||{}).some(f=>p.manualOverrides[f])?'edited':'confirmed';
+  // O histórico pode conter uma restauração: correções antigas não tornam
+  // o valor atual "corrigido" depois que tudo voltou ao original.
+  return p.viewedAt?'viewed':'unread';
+}
+function reviewBadge(p){
+  const state=reviewState(p);
+  return '<span class="review-state '+state+'">'+safe(REVIEW_STATE_LABELS[state])+'</span>';
+}
+function validateReviewConfirmation(o){
+  if(!o||!REVIEW_SOURCES.has(o.source)||typeof o.note!=='string'||
+     o.note.trim().length<12||o.note.length>700||
+     typeof o.at!=='string'||!/^\d{4}-\d\d-\d\dT/.test(o.at))return null;
+  return {source:o.source,note:o.note,at:o.at,
+    changes:Number.isInteger(o.changes)?o.changes:0,
+    evidenceLevel:'declaração local sem autenticação profissional'};
+}
+function validatedReviewEntries(data){
+  if(!Array.isArray(data))return [];
+  const entries=[];
+  for(const e of data.slice(-60)){
+    if(!e||typeof e!=='object'||typeof e.note!=='string'||e.note.length>700||
+       typeof e.at!=='string'||!/^\d{4}-\d\d-\d\dT/.test(e.at)||
+       !['listing','title','description','document','contact','restore'].includes(e.source))continue;
+    if(e.field==='verification'){
+      entries.push({field:'verification',oldValue:null,newValue:null,source:e.source,
+        note:e.note,at:e.at,evidenceLevel:'declaração local sem autenticação'});
+      continue;
+    }
+    if(!Object.hasOwn(REVIEW_FIELDS,e.field))continue;
+    try{
+      entries.push({field:e.field,oldValue:reviewFieldNumber(e.oldValue,e.field),
+        newValue:reviewFieldNumber(e.newValue,e.field),source:e.source,
+        note:e.note,at:e.at,evidenceLevel:'declaração local sem autenticação'});
+    }catch{/* Ignorar campos inválidos de dados locais ou importados. */}
+  }
+  return entries;
+}
+function browserReviewKey(p){
+  return [p.source,p.id,p.link||'',canon(p.city),uf(p.state)].join('|');
+}
+function readSavedReviews(){
+  try{
+    const raw=window.localStorage?.getItem(REVIEW_LOCAL_KEY);
+    if(!raw||raw.length>2500000)return {};
+    const obj=JSON.parse(raw);
+    return obj?.version===1&&obj.entries&&typeof obj.entries==='object'&&!Array.isArray(obj.entries)?obj.entries:{};
+  }catch{return {};}
+}
+function saveBrowserReview(p){
+  try{
+    const storage=window.localStorage;
+    if(!storage)return false;
+    const entries=readSavedReviews();
+    const key=browserReviewKey(p);
+    delete entries[key];
+    const values={};
+    for(const field of Object.keys(REVIEW_FIELDS))
+      if(p.manualOverrides?.[field])values[field]=p[field]??null;
+    entries[key]={
+      source:p.source,id:p.id,link:p.link||'',city:p.city,state:p.state,
+      viewedAt:p.viewedAt||null,
+      reviewConfirmation:p.reviewConfirmation||null,
+      reviewHistory:(p.reviewHistory||[]).slice(-60),
+      providerSnapshot:p.providerSnapshot||null,
+      manualOverrides:p.manualOverrides||{},values,
+      reviewImported:Boolean(p.reviewImported)
+    };
+    const keys=Object.keys(entries);
+    for(const old of keys.slice(0,Math.max(0,keys.length-600)))delete entries[old];
+    storage.setItem(REVIEW_LOCAL_KEY,JSON.stringify({version:1,entries}));
+    return true;
+  }catch{return false;}
+}
+function restoreBrowserReview(p){
+  try{
+    const e=readSavedReviews()[browserReviewKey(p)];
+    if(!e||e.source!==p.source||String(e.id)!==String(p.id)||
+      e.city!==p.city||uf(e.state)!==uf(p.state)||(e.link||'')!==(p.link||''))return p;
+    const entryHistory=validatedReviewEntries(e.reviewHistory);
+    const entryConfirmation=validateReviewConfirmation(e.reviewConfirmation);
+    // Uma marcação "visualizado" antiga não pode apagar uma conferência
+    // mais completa que veio no CSV reimportado.
+    if((p.reviewHistory?.length||p.reviewConfirmation)&&
+       !entryHistory.length&&!entryConfirmation)
+      return {...p,viewedAt:p.viewedAt||e.viewedAt||null};
+    const out={...p,viewedAt:typeof e.viewedAt==='string'?e.viewedAt:null,
+      reviewHistory:entryHistory,reviewConfirmation:entryConfirmation,
+      reviewImported:Boolean(e.reviewImported),manualOverrides:{}};
+    if(e.providerSnapshot&&typeof e.providerSnapshot==='object'){
+      out.providerSnapshot=Object.fromEntries(Object.keys(REVIEW_FIELDS).map(field=>
+        [field,reviewFieldNumber(e.providerSnapshot[field],field)]));
+      for(const field of Object.keys(REVIEW_FIELDS)){
+        if(e.manualOverrides?.[field]===true){
+          const locallyReviewed=reviewFieldNumber(e.values?.[field],field);
+          if(p[field]!==null&&p[field]!==undefined&&p[field]!==locallyReviewed)
+            out.providerConflicts={...(out.providerConflicts||{}),
+              [field]:{providerValue:p[field],reviewedValue:locallyReviewed}};
+          out[field]=locallyReviewed;
+          out.manualOverrides[field]=true;
+        }
+      }
+    }
+    return out;
+  }catch{return p;}
+}
+
 let activeReviewKey=null;
+let reviewReturnSource='eligibility';
+function showReviewError(message){
+  const box=$('review-action-error');
+  box.textContent=message;
+  box.classList.toggle('hidden',!message);
+}
+function showSavedReviewNotice(message,origin='eligibility'){
+  const element=origin==='cards'?'review-saved-cards':'review-saved';
+  for(const id of ['review-saved','review-saved-cards']){
+    const toast=$(id);
+    toast.textContent=message;
+    toast.classList.toggle('hidden',id!==element);
+  }
+  $(element)?.scrollIntoView?.({behavior:'smooth',block:'start'});
+}
+
 function reviewFieldNumber(raw,field){
   const v=REVIEW_FIELDS[field];
   if(!v)throw Error('Campo de conferência não permitido.');
@@ -605,14 +739,22 @@ function applyReviewChanges(p,form,source,note,at=new Date().toISOString()){
     changes.push({field,oldValue:prev,newValue:value,source,note:reason,at,
       evidenceLevel:'declaração do operador, sem autenticação'});
   }
-  if(!changes.length)throw Error('Nenhum campo foi alterado. Informe o dado que conseguiu confirmar.');
+  // Conferir sem alterar valores é um resultado válido, desde que documentado.
+  if(!changes.length)changes.push({
+    field:'verification',oldValue:null,newValue:null,source,note:reason,at,
+    evidenceLevel:'declaração do operador, sem autenticação'
+  });
   const snapshot=p.providerSnapshot&&typeof p.providerSnapshot==='object'?
     {...p.providerSnapshot}:Object.fromEntries(Object.keys(REVIEW_FIELDS).map(field=>[field,p[field]??null]));
   const overrides={...(p.manualOverrides||{})};
   const result={...p,providerSnapshot:snapshot,
     reviewHistory:[...(p.reviewHistory||[]),...changes].slice(-100),
-    reviewImported:false};
+    reviewConfirmation:{source,note:reason,at,
+      changes:changes.filter(x=>x.field!=='verification').length,
+      evidenceLevel:'declaração do operador, sem autenticação'},
+    viewedAt:p.viewedAt||at,reviewImported:false};
   for(const change of changes){
+    if(change.field==='verification')continue;
     result[change.field]=change.newValue;
     overrides[change.field]=true;
   }
@@ -633,34 +775,30 @@ function restoreProviderFields(p,at=new Date().toISOString()){
     result[field]=original;
   }
   result.manualOverrides={};
+  result.reviewConfirmation=null;
   result.reviewHistory=[...(p.reviewHistory||[]),...audit].slice(-100);
   result.reviewImported=false;
   return result;
 }
 function parseImportedHistory(raw){
   if(typeof raw!=='string'||raw.length>20000)return [];
-  try{
-    const data=JSON.parse(raw);
-    if(!Array.isArray(data))return [];
-    return data.slice(-60).filter(e=>e&&typeof e==='object'&&
-      Object.hasOwn(REVIEW_FIELDS,e.field)&&
-      ['listing','title','description','document','contact','restore'].includes(e.source)&&
-      typeof e.note==='string'&&e.note.length<=700&&
-      typeof e.at==='string'&&/^\d{4}-\d\d-\d\dT/.test(e.at)).map(e=>({
-        field:e.field,oldValue:reviewFieldNumber(e.oldValue,e.field),
-        newValue:reviewFieldNumber(e.newValue,e.field),
-        source:e.source,note:e.note,at:e.at,
-        evidenceLevel:'histórico importado do CSV, não autenticado'
-      }));
-  }catch{return [];}
+  try{return validatedReviewEntries(JSON.parse(raw)).map(x=>({
+    ...x,evidenceLevel:'histórico importado do CSV, não autenticado'
+  }));}catch{return [];}
 }
 function reviewTarget(){
   return records.find(x=>x.key===activeReviewKey)||null;
 }
-function openReview(key){
+function openReview(key,origin='eligibility'){
   const p=records.find(x=>x.key===key);
   if(!p){report('Este anúncio não está mais na sessão.',true);return;}
   activeReviewKey=p.key;
+  reviewReturnSource=origin;
+  if(!p.viewedAt){p.viewedAt=new Date().toISOString();saveBrowserReview(p);}
+  $('review-saved').classList.add('hidden');
+  $('review-saved-cards').classList.add('hidden');
+  showReviewError('');
+  refresh();
   const panel=$('review-panel');
   panel.classList.remove('hidden');
   $('review-target').textContent=p.title+' · '+p.source+' · '+p.city+'/'+p.state;
@@ -690,15 +828,32 @@ function closeReview(){
 $('review-close').onclick=closeReview;
 $('review-save').onclick=()=>{
   try{
+    showReviewError('');
     const prior=reviewTarget();
     if(!prior)throw Error('Escolha um anúncio para conferir.');
     const input=Object.fromEntries(Object.keys(REVIEW_FIELDS).map(f=>[f,$('review-'+f).value]));
     const corrected=applyReviewChanges(prior,input,$('review-source').value,$('review-note').value);
     const index=records.findIndex(x=>x.key===prior.key);
+    if(index<0)throw Error('O anúncio não foi encontrado na sessão.');
     records[index]=corrected;
-    refresh();openReview(corrected.key);
-    report('Correção registrada com origem, justificativa e valores anteriores. A triagem e o indicativo foram recalculados.');
-  }catch(error){report(error.message,true);}
+    const saved=saveBrowserReview(corrected);
+    const status=reviewState(corrected);
+    const origin=reviewReturnSource;
+    closeReview();
+    refresh();
+    showSavedReviewNotice(
+      (status==='edited'?'✓ Dados corrigidos e conferência registrada: ':'✓ Anúncio conferido sem alterações: ')+
+      corrected.title+'. A triagem e o indicativo foram recalculados. '+
+      (saved?'Revisão guardada neste navegador.':'Atenção: o navegador não permitiu guardar a revisão; exporte o CSV antes de sair.'),
+      origin
+    );
+    report('Conferência salva. O anúncio foi marcado na lista; dados revisados continuam sujeitos à validação profissional.');
+  }catch(error){
+    const message=error?.message||'Não foi possível salvar a conferência.';
+    showReviewError(message);
+    $('review-action-error')?.scrollIntoView?.({behavior:'smooth',block:'center'});
+    report(message,true);
+  }
 };
 $('review-reset').onclick=()=>{
   try{
@@ -706,9 +861,15 @@ $('review-reset').onclick=()=>{
     if(!prior?.providerSnapshot)throw Error('Este anúncio ainda não possui correções locais para restaurar.');
     if(window.confirm?.('Restaurar os valores originais deste anúncio e registrar a restauração?')===false)return;
     const index=records.findIndex(x=>x.key===prior.key);
-    records[index]=restoreProviderFields(prior);
-    refresh();openReview(prior.key);
-    report('Os valores originais capturados na primeira conferência foram restaurados e a ação foi registrada.');
+    const original=restoreProviderFields(prior);
+    records[index]=original;
+    const saved=saveBrowserReview(original);
+    const origin=reviewReturnSource;
+    closeReview();
+    refresh();
+    showSavedReviewNotice('Valores originais restaurados: '+original.title+
+      '. A restauração foi registrada.'+(saved?'':' Não foi possível guardar no navegador; exporte CSV.'),origin);
+    report('Restauração concluída. Indicativo atualizado.');
   }catch(error){report(error.message,true);}
 };
 
@@ -741,15 +902,22 @@ function renderEligibility(stats,chosen){
     ['pending','Para confirmar dados'],
     ['excluded','Fora do cálculo']
   ].map(([key,label])=>'<div class="eligibility-metric '+key+'"><strong>'+counts[key]+'</strong><small>'+label+'</small></div>').join('');
+  const reviewCount={unread:0,viewed:0,confirmed:0,edited:0,imported:0};
+  for(const row of rows)reviewCount[reviewState(row.item)]++;
+  $('review-progress').textContent='Não visualizados: '+reviewCount.unread+
+    ' · Visualizados: '+reviewCount.viewed+' · Conferidos: '+reviewCount.confirmed+
+    ' · Corrigidos: '+reviewCount.edited+' · Importados: '+reviewCount.imported+'.';
   const filter=$('eligibility-filter').value||'all';
-  const filtered=filter==='all'?rows:rows.filter(r=>r.classification===filter);
+  const reviewFilter=$('eligibility-review-filter').value||'all';
+  const filtered=rows.filter(r=>(filter==='all'||r.classification===filter)&&
+    (reviewFilter==='all'||reviewState(r.item)===reviewFilter));
   const batch=filtered.slice(0,eligibilityLimit);
   $('eligibility-visible-count').textContent='Mostrando '+batch.length+' de '+filtered.length+' anúncio(s)';
   list.innerHTML=batch.length?batch.map(row=>{
     const link=url(row.item?.link);
     const title='<strong>'+safe(row.label)+'</strong>';
-    return '<div class="eligibility-line"><div>'+title+
-      '<p>'+safe(row.item?.source||'Origem não informada')+
+    return '<div class="eligibility-line review-item-'+reviewState(row.item)+'"><div>'+title+
+      '<p>'+reviewBadge(row.item)+' · '+safe(row.item?.source||'Origem não informada')+
       (Number.isFinite(row.item?.price)?' · '+safe(money(row.item.price)):'')+
       '</p></div><span class="status '+row.classification+'">'+eligibilityNames[row.classification]+'</span>'+
       '<div class="reason"><strong>Motivo:</strong> '+safe(row.reason)+
@@ -760,14 +928,27 @@ function renderEligibility(stats,chosen){
   const more=$('eligibility-more');
   more.classList.toggle('hidden',filtered.length<=eligibilityLimit);
   list.querySelectorAll?.('.review-from-eligibility').forEach(button=>{
-    button.onclick=()=>openReview(decodeURIComponent(button.dataset.reviewKey||''));
+    button.onclick=()=>openReview(decodeURIComponent(button.dataset.reviewKey||''),'eligibility');
   });
 }
 $('eligibility-filter').addEventListener('change',()=>{
   eligibilityLimit=25;renderOfferIndicator();
 });
+$('eligibility-review-filter').addEventListener('change',()=>{
+  eligibilityLimit=25;renderOfferIndicator();
+});
 $('eligibility-more').onclick=()=>{
   eligibilityLimit+=25;renderOfferIndicator();
+};
+
+$('clear-browser-reviews').onclick=()=>{
+  if(window.confirm?.('Apagar as conferências guardadas neste navegador? A lista atual continuará aberta, mas os registros não serão recuperados após atualizar e reimportar o CSV.')===false)return;
+  try{
+    window.localStorage?.removeItem(REVIEW_LOCAL_KEY);
+    showSavedReviewNotice('Conferências locais apagadas deste navegador. Os anúncios atualmente abertos foram preservados; exporte um CSV se quiser conservar esse trabalho.');
+  }catch{
+    report('Não foi possível limpar as revisões do armazenamento deste navegador.',true);
+  }
 };
 
 function renderOfferIndicator(){
@@ -1028,7 +1209,8 @@ function renderCards() {
   if (!visible.length) {const el=document.createElement('p');el.className='muted';el.textContent='Nenhum anúncio corresponde aos filtros.';box.appendChild(el);}
   const batch=visible.slice(0,visibleCardLimit);
   for (const p of batch) {
-    const card=document.createElement('article'); card.className='listing'+(selected.has(p.key)?' selected':'');
+    const card=document.createElement('article');
+    card.className='listing review-card-'+reviewState(p)+(selected.has(p.key)?' selected':'');
     const dis=distance(center,p), flag=$('dedupe').checked&&duplicate(p);
     const review=reviewComparable(p);
     const reviewClass=review.status==='complete'?'quality-ok':review.status==='review'?'quality-warn':'quality-missing';
@@ -1038,7 +1220,8 @@ function renderCards() {
       '<div class="row between"><span class="pill">'+safe(p.source)+'</span><span class="muted">'+(validPoint(p)?(p.approx?'📍 Aproximada':'📍 Não certificada'):'Sem coordenadas')+'</span></div>'+
       (p.collectedAt?'<span class="muted">Coletado em '+safe(p.collectedAt.slice(0,10))+
        (p.requestId?' · Consulta '+safe(p.requestId):'')+'</span>':'')+
-      '<h3>'+safe(p.title)+'</h3><div class="row"><span class="pill orange">'+safe(typeLabel[p.type]||'A classificar')+'</span><span class="pill '+reviewClass+'">'+safe(qualityLabels[review.status])+'</span></div>'+
+      '<h3>'+safe(p.title)+'</h3><div class="row">'+reviewBadge(p)+
+      '<span class="pill orange">'+safe(typeLabel[p.type]||'A classificar')+'</span><span class="pill '+reviewClass+'">'+safe(qualityLabels[review.status])+'</span></div>'+
       (match?'<div class="reference-result"><span class="pill '+refClass+'">Referência: '+safe(referenceLabels[match.status])+'</span>'+
         (match.distanceKm!==null?' <span class="muted">'+safe(match.distanceKm.toFixed(1))+' km do imóvel de referência</span>':'')+
         (match.issues.length?'<div class="quality-reasons">'+match.issues.slice(0,4).map(issue=>'<span>'+safe(issue)+'</span>').join('')+'</div>':'')+
@@ -1061,7 +1244,7 @@ function renderCards() {
       (p.detailed?'<div class="pill orange">Dados adicionais consultados</div>':'');
     card.querySelector('.pick').onchange = event=>{if(event.target.checked)selected.add(p.key);else selected.delete(p.key);refresh();};
     const reviewButton=card.querySelector('.review-verify');
-    if(reviewButton)reviewButton.onclick=()=>openReview(p.key);
+    if(reviewButton)reviewButton.onclick=()=>openReview(p.key,'cards');
     const details=card.querySelector('.detail');
     if(details)details.onclick=()=>fetchDetails(p,details);
     box.appendChild(card);
@@ -1128,8 +1311,16 @@ function loadNormalized(items,total=null,detailed=false){
           }
           continue;
         }
+        if(prior.reviewConfirmation&&Object.hasOwn(REVIEW_FIELDS,key)&&
+           val!==prior[key]){
+          // Uma revisão sem alteração não autentica novos números que o
+          // portal venha a informar em consultas futuras.
+          update.reviewConfirmation=null;
+          update.providerConflicts={...(update.providerConflicts||{}),
+            [key]:{providerValue:val,reviewedValue:prior[key]}};
+        }
         // Histórico local não é substituído por metadados da nova consulta.
-        if(['reviewHistory','manualOverrides','providerSnapshot','reviewImported','providerConflicts'].includes(key))
+        if(['reviewHistory','reviewConfirmation','viewedAt','manualOverrides','providerSnapshot','reviewImported','providerConflicts'].includes(key))
           continue;
         update[key]=val;
       }
@@ -1137,7 +1328,7 @@ function loadNormalized(items,total=null,detailed=false){
       records[idx]=update;
     } else {
       known.set(p.key,records.length);
-      records.push({...p,detailed});
+      records.push(restoreBrowserReview({...p,detailed}));
       if($('auto-select-new').checked)selected.add(p.key);
     }
   }
@@ -1188,6 +1379,10 @@ function parseExportCsv(raw){
     const valid=latitude!==null&&longitude!==null&&Math.abs(latitude)<=90&&Math.abs(longitude)<=180&&(latitude!==0||longitude!==0);
     const neighborhood=row.neighborhood?.trim()||'—';
     const importedReviewHistory=parseImportedHistory(row.reviewHistory);
+    let importedConfirmation=null;
+    if(typeof row.reviewConfirmation==='string'&&row.reviewConfirmation.length<2000){
+      try{importedConfirmation=validateReviewConfirmation(JSON.parse(row.reviewConfirmation));}catch{/* Inválido */}
+    }
     const record={
       source,id:id||link,key:source+':'+(id||link),type,
       offerPurpose:inferOfferPurpose({...row,link}),
@@ -1208,7 +1403,10 @@ function parseExportCsv(raw){
       lat:valid?latitude:null,lng:valid?longitude:null,approx:row.approx?.trim().toLowerCase()==='true',
       advertiser:row.advertiser?.trim()||'—',description:'—',amenities:[],detailed:false,
       reviewHistory:importedReviewHistory,
-      reviewImported:importedReviewHistory.length>0,
+      reviewConfirmation:importedConfirmation,
+      viewedAt:typeof row.reviewViewedAt==='string'&&/^d{4}-dd-ddT/.test(row.reviewViewedAt)?
+        row.reviewViewedAt:null,
+      reviewImported:importedReviewHistory.length>0||Boolean(importedConfirmation),
       providerSnapshot:null,manualOverrides:{},providerConflicts:{}
     };
     return record;
@@ -1686,6 +1884,12 @@ async function fetchDetails(p,button){
             [key]:{providerValue:val,reviewedValue:current[key]}};
         continue;
       }
+      if(current.reviewConfirmation&&Object.hasOwn(REVIEW_FIELDS,key)&&
+         val!==current[key]){
+        merged.reviewConfirmation=null;
+        merged.providerConflicts={...(merged.providerConflicts||{}),
+          [key]:{providerValue:val,reviewedValue:current[key]}};
+      }
       merged[key]=val;
     }
     merged.detailed=true;
@@ -1702,7 +1906,7 @@ for(const id of ['in-radius','min-beds','dedupe','result-type','quality-filter',
 }
 $('export-btn').onclick=()=>{
   const picked=records.filter(p=>selected.has(p.key));if(picked.length<2)return;
-  const fields=['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','textEvidence','reviewHistory','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser',
+  const fields=['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','textEvidence','reviewHistory','reviewConfirmation','reviewViewedAt','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser',
     'ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_area_m2','ref_area_tolerance_percent','ref_status','ref_reasons'];
   const derived=p=>{
     const r=referenceProfile,m=assessReference(r,p),land=r&&['land','farm'].includes(r.type);
@@ -1714,10 +1918,12 @@ $('export-btn').onclick=()=>{
       ref_area_tolerance_percent:r?.tolerance??'',ref_status:m?.status??'',
       ref_reasons:m?.issues.join(' | ')??'',
       textEvidence:JSON.stringify(p.textEvidence??[]),
-      reviewHistory:JSON.stringify((p.reviewHistory||[]).slice(-60))
+      reviewHistory:JSON.stringify((p.reviewHistory||[]).slice(-60)),
+      reviewConfirmation:JSON.stringify(p.reviewConfirmation||null),
+      reviewViewedAt:p.viewedAt||''
     };
   };
-  const formulaSensitive=new Set(['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','textEvidence','reviewHistory','title','link','neighborhood','city','state','advertiser','ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_status','ref_reasons']);
+  const formulaSensitive=new Set(['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','textEvidence','reviewHistory','reviewConfirmation','reviewViewedAt','title','link','neighborhood','city','state','advertiser','ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_status','ref_reasons']);
   const csvValue=(key,value)=>{
     const raw=String(value??'');
     // Protege a abertura do CSV em planilhas contra fórmulas injetadas em
