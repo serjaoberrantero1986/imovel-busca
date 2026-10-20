@@ -260,9 +260,9 @@ function renderComparison() {
     ' Preços anunciados não representam preços efetivos de venda. Nenhuma avaliação ou PTAM é calculado.</p>';
 }
 function refresh(){renderCards();renderComparison();}
-function load(input) {
-  const data=payload(input), known=new Map(records.map((x,i)=>[x.key,i]));
-  for (const p of data.items) {
+function loadNormalized(items,total=null,detailed=false){
+  const known=new Map(records.map((x,i)=>[x.key,i]));
+  for (const p of items) {
     const idx=known.get(p.key);
     if(idx!==undefined) {
       const prior=records[idx], update={...prior};
@@ -271,17 +271,82 @@ function load(input) {
         if(key==='type'&&val==='unknown'&&prior.type!=='unknown')continue;
         update[key]=val;
       }
-      if(input?.data?.type==='pdp')update.detailed=true;
+      if(detailed)update.detailed=true;
       records[idx]=update;
     } else {
       known.set(p.key,records.length);
-      records.push({...p,detailed:input?.data?.type==='pdp'});
+      records.push({...p,detailed});
     }
   }
-  if(data.total!==null)reported=data.total;
+  if(total!==null)reported=total;
   drawMap(true);refresh();
-  report('Importação concluída: '+data.items.length+' anúncios nesta consulta e '+records.length+' únicos por ID/fonte na sessão. Dados sujeitos a revisão.');
+  report('Importação concluída: '+items.length+' anúncios nesta consulta e '+records.length+' únicos por ID/fonte na sessão. Dados sujeitos a revisão.');
 }
+function load(input){
+  const data=payload(input);
+  loadNormalized(data.items,data.total,input?.data?.type==='pdp');
+}
+// Lê exclusivamente o formato CSV de exportação do laboratório, inclusive arquivos
+// antigos sem a coluna "type". Arquivos ficam no navegador, sem upload ao servidor.
+function parseExportCsv(raw){
+  if(typeof raw!=='string'||raw.length>3000000)throw Error('CSV inválido ou maior que 3 MB.');
+  const rows=[],row=[];let field='',quoted=false;
+  const cell=()=>{row.push(field);field='';};
+  const line=()=>{cell();if(row.some(value=>value.trim()!==''))rows.push([...row]);row.length=0;};
+  const content=raw.replace(/^\uFEFF/,'');
+  for(let i=0;i<content.length;i++){
+    const char=content[i];
+    if(char==='"'){
+      if(quoted&&content[i+1]==='"'){field+='"';i++;}
+      else quoted=!quoted;
+    }else if(char===';'&&!quoted){cell();}
+    else if((char==='\r'||char==='\n')&&!quoted){
+      if(char==='\r'&&content[i+1]==='\n')i++;
+      line();
+    }else field+=char;
+  }
+  if(quoted)throw Error('CSV contém campo com aspas não fechado.');
+  if(field||row.length)line();
+  if(!rows.length)throw Error('CSV vazio.');
+  const headers=rows.shift().map(v=>v.trim());
+  const required=['source','id','price','usable','total','city','state','link'];
+  if(required.some(key=>!headers.includes(key)))throw Error('Formato CSV incompatível com a exportação do Imóvel Busca.');
+  if(rows.length>2000)throw Error('CSV com mais de 2.000 anúncios: divida o arquivo em partes.');
+  return rows.map((values,i)=>{
+    if(values.length!==headers.length)throw Error('CSV: número de colunas incorreto na linha '+(i+2)+'.');
+    const row=Object.fromEntries(headers.map((key,index)=>[key,values[index]]));
+    const id=row.id.trim(),source=row.source.trim().toLowerCase();
+    if(!source||(!id&&!row.link))throw Error('CSV: anúncio sem identificação na linha '+(i+2)+'.');
+    const link=url(row.link);
+    const type=Object.hasOwn(typeLabel,row.type)?row.type:classify({title:row.title,link});
+    const latitude=number(row.lat),longitude=number(row.lng);
+    const valid=latitude!==null&&longitude!==null&&Math.abs(latitude)<=90&&Math.abs(longitude)<=180&&(latitude!==0||longitude!==0);
+    const neighborhood=row.neighborhood?.trim()||'—';
+    const record={
+      source,id:id||link,key:source+':'+(id||link),type,
+      title:bestTitle({title:row.title,neighborhood},type,{neighborhood:neighborhood==='—'?'':neighborhood}),
+      link,price:number(row.price),usable:number(row.usable),total:number(row.total),
+      beds:number(row.beds),suites:number(row.suites),baths:number(row.baths),
+      spaces:number(row.spaces),floors:number(row.floors),
+      neighborhood,city:row.city?.trim()||'—',
+      state:uf(row.state)||row.state?.trim()||'—',
+      lat:valid?latitude:null,lng:valid?longitude:null,approx:row.approx?.trim().toLowerCase()==='true',
+      advertiser:row.advertiser?.trim()||'—',description:'—',amenities:[],detailed:false
+    };
+    return record;
+  });
+}
+$('csv-import-btn').onclick=async()=>{
+  const file=$('csv-file').files?.[0];
+  if(!file){report('Selecione um CSV anteriormente exportado pelo Imóvel Busca.',true);return;}
+  try{
+    const content=await file.text();
+    const imported=parseExportCsv(content);
+    activeLocation=null;displayAudit(null);
+    loadNormalized(imported);
+    report('CSV importado localmente: '+imported.length+' anúncios. Confira a triagem, as duplicidades e a origem antes de selecionar comparáveis.');
+  }catch(e){report(e.message||'Erro ao ler o CSV',true);}
+};
 $('import-btn').onclick=()=>{try{activeLocation=null;displayAudit(null);load(JSON.parse($('json-input').value));}catch(e){report(e.message||'JSON inválido',true);}};
 $('clear-btn').onclick=()=>{records=[];selected.clear();reported=null;center=null;activeLocation=null;displayAudit(null);drawMap(false);refresh();report('Sessão limpa. Nenhum dado foi enviado ao servidor.');};
 function tab(which){const api=which==='api';$('import-panel').classList.toggle('hidden',api);$('api-panel').classList.toggle('hidden',!api);$('tab-api').classList.toggle('active',api);$('tab-import').classList.toggle('active',!api);}
@@ -488,7 +553,7 @@ for(const id of ['in-radius','min-beds','dedupe','result-type','quality-filter',
 }
 $('export-btn').onclick=()=>{
   const picked=records.filter(p=>selected.has(p.key));if(picked.length<2)return;
-  const fields=['source','id','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser'];
+  const fields=['source','id','type','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser'];
   const cells=fields.join(';')+'\r\n'+picked.map(p=>fields.map(k=>'"'+String(p[k]??'').replace(/"/g,'""')+'"').join(';')).join('\r\n');
   const object=URL.createObjectURL(new Blob(['\ufeff'+cells],{type:'text/csv;charset=utf-8'}));
   const a=document.createElement('a');a.href=object;a.download='comparaveis-imovel-busca.csv';a.click();setTimeout(()=>URL.revokeObjectURL(object),1200);
