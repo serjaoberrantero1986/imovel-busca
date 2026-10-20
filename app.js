@@ -377,9 +377,13 @@ function readReferenceFields(){
 function syncReferenceFields(){
   const type=$('ref-type').value;
   $('ref-custom-wrap').classList.toggle('hidden',type!=='other');
-  const primaryArea=['land','farm'].includes(type)?'área total do terreno':'área útil';
-  $('ref-area-hint').textContent='Para '+(typeLabel[type]||'o tipo selecionado')+
-    ', a referência utiliza '+primaryArea+'. Área construída não substitui área útil; campos faltantes ficam sinalizados.';
+  const isLand=['land','farm'].includes(type);
+  const primaryArea=isLand?'área do terreno':'área útil / privativa';
+  $('ref-area-hint').textContent='Campo principal para '+(typeLabel[type]||'o imóvel selecionado')+': '+primaryArea+
+    ' (m²). Sem esta metragem não é possível avaliar a semelhança de tamanho. Área construída não substitui área útil.';
+  const useful=$('ref-usable'),total=$('ref-total');
+  useful.classList.toggle('main-area-required',!isLand&&type!==''&&!useful.value.trim());
+  total.classList.toggle('main-area-required',isLand&&!total.value.trim());
 }
 function showReference(){
   const summary=$('ref-summary'),filter=$('reference-filter'),sort=$('reference-sort');
@@ -393,6 +397,7 @@ function showReference(){
   const r=referenceProfile;
   const isLand=['land','farm'].includes(r.type);
   const missingMain=(isLand?r.total:r.usable)===null;
+  summary.className=missingMain?'reference-warning':'';
   summary.textContent=(missingMain?'⚠️ Falta a '+(isLand?'área do terreno':'área útil / privativa')+' para comparar. Preencha acima e salve novamente. · ':'Imóvel cadastrado · ')+
     r.name+' · '+referenceTitle(r)+' · '+r.city+'/'+r.state+
     (r.neighborhood?' · '+r.neighborhood:'')+
@@ -402,7 +407,7 @@ function showReference(){
 $('reference-save').onclick=()=>{
   try{
     referenceProfile=makeReference(readReferenceFields());
-    showReference();
+    showReference();syncReferenceFields();
     // Exibir a referência mesmo quando estiver fora da cidade padrão do mapa.
     if(map&&referenceProfile.lat!==null)map.setView([referenceProfile.lat,referenceProfile.lng],12);
     drawMap(false);refresh();
@@ -417,6 +422,7 @@ $('reference-clear').onclick=()=>{
   report('Imóvel de referência removido. Anúncios e seleção foram preservados.');
 };
 $('ref-type').addEventListener('change',syncReferenceFields);
+for(const id of ['ref-usable','ref-total'])$(id).addEventListener('input',syncReferenceFields);
 syncReferenceFields();
 showReference();
 
