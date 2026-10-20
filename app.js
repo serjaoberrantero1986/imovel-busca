@@ -93,6 +93,20 @@ function propValue(item,keys) {
   const cleaned=String(value).replace(/[^\d,.]/g,'').replace(/\./g,'').replace(',','.');
   return cleaned&&Number.isFinite(Number(cleaned))?Number(cleaned):null;
 }
+
+function inferOfferPurpose(item,selectedPrice=null){
+  const codes=[item?.offerPurpose,item?.businessType,item?.transactionType,
+    item?.operation,selectedPrice?.businessType].filter(v=>typeof v==='string');
+  for(const input of codes){
+    const code=canon(input);
+    if(/^(rent|rental|aluguel|locacao|lease)$/.test(code))return 'rent';
+    if(/^(sale|sell|venda|buy)$/.test(code))return 'sale';
+  }
+  const link=url(item?.link||item?.url||item?.listingUrl)||'';
+  if(/(?:^|[-/])(?:aluguel|locacao|rent)(?:[-/?]|$)/i.test(link))return 'rent';
+  if(/(?:^|[-/])(?:venda|sale)(?:[-/?]|$)/i.test(link))return 'sale';
+  return 'unknown';
+}
 const BR_STATES={AC:'acre',AL:'alagoas',AP:'amapa',AM:'amazonas',BA:'bahia',CE:'ceara',DF:'distrito federal',ES:'espirito santo',GO:'goias',MA:'maranhao',MT:'mato grosso',MS:'mato grosso do sul',MG:'minas gerais',PA:'para',PB:'paraiba',PR:'parana',PE:'pernambuco',PI:'piaui',RJ:'rio de janeiro',RN:'rio grande do norte',RS:'rio grande do sul',RO:'rondonia',RR:'roraima',SC:'santa catarina',SP:'sao paulo',SE:'sergipe',TO:'tocantins'};
 function uf(v) {const x=canon(v);return Object.keys(BR_STATES).find(k=>canon(k)===x||BR_STATES[k]===x)||'';}
 function normalized(item,source) {
@@ -110,7 +124,7 @@ function normalized(item,source) {
   const count=(key,fallback)=>number(counts[key]?.count??fallback);
   const type=classify(item);
   return {
-    id,key:source+':'+id,source,type,
+    id,key:source+':'+id,source,type,offerPurpose:inferOfferPurpose(item,prices),
     title:bestTitle(item,type,{neighborhood:address.neighborhood||location.neighborhood}),
     link:url(item.url||item.listingUrl),
     price:number(prices.mainValue??prices.value??prices.rawPrice??prices.price??item.askingPrice??item.price?.amount??item.price),
@@ -395,6 +409,8 @@ function computeOfferIndicator(reference,chosen){
   for(const item of list){
     const p=item||{},label=p.title||p.id||'Anúncio sem título';
     const issue=(reason)=>result.excluded.push({key:p.key||null,label,reason});
+    const purpose=inferOfferPurpose(p);
+    if(purpose==='rent'){issue('Anúncio de locação: não pode compor indicativo de venda.');continue;}
     const review=assessReference(reference,p);
     if(review.status==='incompatible'){issue('Tipologia ou município incompatível.');continue;}
     if(review.status==='insufficient'){issue('Dados essenciais ausentes: '+(review.issues[0]||'verifique os atributos')+'.');continue;}
@@ -428,6 +444,8 @@ function computeOfferIndicator(reference,chosen){
     result.reasons.push('Somente '+result.included.length+' anúncios válidos; a amostra é pequena.');
   if(result.included.some(x=>x.warnings.length))
     result.reasons.push('Os anúncios apresentam diferenças de características que não foram ajustadas matematicamente.');
+  if(result.included.some(x=>inferOfferPurpose(x.item)==='unknown'))
+    result.reasons.push('A finalidade de venda não foi confirmada em todos os anúncios; confira os links de origem.');
   const spread=(units.at(-1)-units[0])/result.unitMedian;
   if(spread>0.3)result.reasons.push('Dispersão dos preços por m² superior a 30% da mediana.');
   if(result.excluded.length)
@@ -781,6 +799,7 @@ function parseExportCsv(raw){
     const neighborhood=row.neighborhood?.trim()||'—';
     const record={
       source,id:id||link,key:source+':'+(id||link),type,
+      offerPurpose:inferOfferPurpose({...row,link}),
       title:bestTitle({title:row.title,neighborhood},type,{neighborhood:neighborhood==='—'?'':neighborhood}),
       link,price:number(row.price),usable:number(row.usable),total:number(row.total),
       beds:number(row.beds),suites:number(row.suites),baths:number(row.baths),
@@ -1010,7 +1029,7 @@ for(const id of ['in-radius','min-beds','dedupe','result-type','quality-filter',
 }
 $('export-btn').onclick=()=>{
   const picked=records.filter(p=>selected.has(p.key));if(picked.length<2)return;
-  const fields=['source','id','type','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser',
+  const fields=['source','id','type','offerPurpose','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser',
     'ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_area_m2','ref_area_tolerance_percent','ref_status','ref_reasons'];
   const derived=p=>{
     const r=referenceProfile,m=assessReference(r,p),land=r&&['land','farm'].includes(r.type);
@@ -1023,7 +1042,7 @@ $('export-btn').onclick=()=>{
       ref_reasons:m?.issues.join(' | ')??''
     };
   };
-  const formulaSensitive=new Set(['source','id','type','title','link','neighborhood','city','state','advertiser','ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_status','ref_reasons']);
+  const formulaSensitive=new Set(['source','id','type','offerPurpose','title','link','neighborhood','city','state','advertiser','ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_status','ref_reasons']);
   const csvValue=(key,value)=>{
     const raw=String(value??'');
     // Protege a abertura do CSV em planilhas contra fórmulas injetadas em
