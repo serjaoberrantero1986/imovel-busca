@@ -386,7 +386,7 @@ test('Interface simplificada: referência, arquivo e resultado seguem três pass
  assert.match(html,/<details[^>]*id="comparison-extra"/);
  assert.match(html,/1\. Descreva o imóvel/);
  assert.match(html,/2\. Adicione anúncios semelhantes/);
- assert.match(html,/3\. Entenda sua comparação/);
+ assert.match(html,/3\. Veja seu indicativo de valor/);
 });
 
 
@@ -543,7 +543,8 @@ test('Painel de valor responde à seleção sem exigir exportação CSV',()=>{
  el('ref-usable').value='110';
  el('ref-tolerance').value='20';
  el('reference-save').onclick();
- assert.match(el('offer-indicator').innerHTML,/Selecione pelo menos dois/);
+ assert.match(el('ref-summary').textContent,/Casa Ana Guilherme/,el('status').textContent);
+ assert.match(el('offer-indicator').innerHTML,/Selecione pelo menos dois/,el('status').textContent);
  ctx.selected.add('viva:1');ctx.selected.add('viva:2');
  ctx.renderOfferIndicator();
  assert.match(el('offer-indicator').innerHTML,/R\$ 269\.500/);
