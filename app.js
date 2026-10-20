@@ -109,6 +109,63 @@ function inferOfferPurpose(item,selectedPrice=null){
 }
 const BR_STATES={AC:'acre',AL:'alagoas',AP:'amapa',AM:'amazonas',BA:'bahia',CE:'ceara',DF:'distrito federal',ES:'espirito santo',GO:'goias',MA:'maranhao',MT:'mato grosso',MS:'mato grosso do sul',MG:'minas gerais',PA:'para',PB:'paraiba',PR:'parana',PE:'pernambuco',PI:'piaui',RJ:'rio de janeiro',RN:'rio grande do norte',RS:'rio grande do sul',RO:'rondonia',RR:'roraima',SC:'santa catarina',SP:'sao paulo',SE:'sergipe',TO:'tocantins'};
 function uf(v) {const x=canon(v);return Object.keys(BR_STATES).find(k=>canon(k)===x||BR_STATES[k]===x)||'';}
+
+// Os dados dos portais não são completos. O texto pode fornecer INDÍCIOS,
+// não valores certificados. Áreas sem indicação explícita de natureza não
+// são convertidas em área útil, área total ou área construída.
+function extractTextEvidence(title,description=''){
+  const observations=[];
+  const entries=[['título',title],['descrição',description]];
+  for(const [origin,input] of entries){
+    const raw=typeof input==='string'?input.slice(0,3000):'';
+    if(!raw||raw==='—')continue;
+    const lowered=canon(raw);
+    // Regra explícita e conservadora: números associados a unidades e palavras
+    // inequívocas; não inventar preço, área ou localização.
+    const patterns=[
+      ['beds',/\b(\d{1,2})\s*(?:dormit[oó]rios?|quartos?)\b/gi,'dormitórios'],
+      ['suites',/\b(\d{1,2})\s*su[ií]tes?\b/gi,'suítes'],
+      ['baths',/\b(\d{1,2})\s*(?:banheiros?|wcs?)\b/gi,'banheiros'],
+      ['spaces',/\b(\d{1,2})\s*(?:vagas?(?:\s+de\s+garagem)?)\b/gi,'vagas']
+    ];
+    for(const [field,re,label] of patterns){
+      const m=re.exec(raw);
+      if(!m)continue;
+      const value=Number(m[1]);
+      if(value>0&&value<=60&&!observations.some(x=>x.field===field&&x.value===value))
+        observations.push({field,value,origin,label:value+' '+label});
+    }
+    const re=/\b(\d{1,5}(?:[,.]\d{1,2})?)\s*(?:m\s*(?:²|2)|metros?\s+quadrados?)(?=\s|[,.;:!?\/-]|$)/gi;
+    for(const match of raw.matchAll(re)){
+      const value=Number(match[1].replace(',','.'));
+      if(!Number.isFinite(value)||value<=0||value>100000)continue;
+      const left=canon(raw.slice(Math.max(0,match.index-28),match.index));
+      const right=canon(raw.slice(match.index+match[0].length,match.index+match[0].length+26)).trim();
+      const nearby=(right.match(/^(?:de )?(?:area )?(?:util|privativa|construida|total|terreno|lote)\b/)?.[0]||
+        left.match(/(?:area )?(?:util|privativa|construida|total|terreno|lote)(?: de)?\s*$/)?.[0]||'');
+      const kind=/\b(util|privativa)\b/.test(nearby)?'útil/privativa':
+        /\bconstruida\b/.test(nearby)?'construída':
+        /\b(total|terreno|lote)\b/.test(nearby)?'terreno/total':'não especificada';
+      if(observations.some(x=>x.field==='area'&&x.value===value&&x.kind===kind))continue;
+      observations.push({field:'area',value,kind,origin,label:match[0].trim()+
+        ' ('+(kind==='não especificada'?'tipo de área não identificado': 'área '+kind)+')'});
+    }
+  }
+  return observations.slice(0,12);
+}
+function safeTextEvidence(input,title,description){
+  // CSVs legados trazem apenas título. Metadados já enriquecidos são aceitos
+  // se puderem ser validados, sem permitir atributos arbitrários ou HTML.
+  if(!Array.isArray(input))return extractTextEvidence(title,description);
+  return input.slice(0,12).filter(x=>x&&typeof x==='object'&&
+    ['beds','suites','baths','spaces','area'].includes(x.field)&&
+    Number.isFinite(x.value)&&x.value>0&&x.value<100001).map(x=>({
+      field:x.field,value:x.value,origin:['título','descrição'].includes(x.origin)?x.origin:'título',
+      kind:typeof x.kind==='string'?x.kind.slice(0,40):'',
+      label:typeof x.label==='string'?x.label.slice(0,100):String(x.value)
+    }));
+}
+
 function normalized(item,source) {
   const attr=(!Array.isArray(item.attributes)&&item.attributes)||{};
   const prices=Array.isArray(item.prices)?item.prices.find(p=>p.businessType==='SALE')||item.prices[0]||{}:item.prices||{};
@@ -126,6 +183,7 @@ function normalized(item,source) {
   return {
     id,key:source+':'+id,source,type,offerPurpose:inferOfferPurpose(item,prices),
     title:bestTitle(item,type,{neighborhood:address.neighborhood||location.neighborhood}),
+    textEvidence:extractTextEvidence(item.title||item.generatedTitle||'',item.description),
     link:url(item.url||item.listingUrl),
     price:number(prices.mainValue??prices.value??prices.rawPrice??prices.price??item.askingPrice??item.price?.amount??item.price),
     usable:take('usableAreas',area.useful??item.property?.usableArea??item.usableArea??propValue(item,['area util','area privativa'])),
@@ -540,7 +598,7 @@ function renderGuidedSummary(){
     (referenceProfile?'<div style="margin-top:8px"><a href="#reference-panel">Revisar dados do meu imóvel ↑</a></div>':'')+'</div>';
   if(items.length){
     html+='<div class="guide-meta">Anúncios escolhidos ('+items.length+'). Valores abaixo são <strong>preços anunciados</strong>, não preços de venda ou avaliações.</div>';
-    for(const p of items){
+    for(const p of items.slice(0,12)){
       const outcome=referenceProfile?assessReference(referenceProfile,p):null;
       const review=reviewComparable(p);
       const issues=outcome?.issues??['Cadastre o imóvel de referência para comparar características.'];
@@ -558,6 +616,8 @@ function renderGuidedSummary(){
         '</div></div>';
     }
   }
+  if(items.length>12)html+='<p class="hint">Exibindo um resumo de 12 dos '+items.length+
+    ' anúncios selecionados. O indicativo considera todos os elegíveis.</p>';
   html+='<p class="hint"><strong>Importante:</strong> este resultado serve para escolher e conferir comparáveis. O indicador acima utiliza somente preços anunciados por m², sem ajustes técnicos de características. Não representa valor de mercado concluído, preço negociado ou PTAM.</p>';
   el.innerHTML=html;
 }
@@ -686,9 +746,42 @@ function drawMap(recenter=false){
   if(recenter&&located.length)map.fitBounds(L.latLngBounds(located.map(p=>[p.lat,p.lng])).pad(.16),{maxZoom:14});
 }
 if(map)map.on('click',event=>{center={lat:event.latlng.lat,lng:event.latlng.lng};drawMap(false);refresh();});
+function bulkSelectVisible(checked){
+  const visible=visibleRecords();
+  for(const p of visible){
+    if(checked)selected.add(p.key);
+    else selected.delete(p.key);
+  }
+  refresh();
+  report((checked?'Selecionados ':'Desmarcados ')+visible.length+
+    ' anúncios visíveis. Seleção não significa aprovação dos comparáveis; o indicativo ainda verifica a elegibilidade.');
+}
+function syncSelectionToolbar(visible){
+  const count=visible.filter(p=>selected.has(p.key)).length;
+  const all=visible.length>0&&count===visible.length;
+  const ticker=$('select-all-visible-toggle');
+  ticker.checked=all;
+  ticker.indeterminate=count>0&&!all;
+  ticker.disabled=!visible.length;
+  $('select-all-visible').disabled=!visible.length||all;
+  $('deselect-all-visible').disabled=!count;
+  $('deselect-all').disabled=!selected.size;
+  $('selection-counter').textContent=selected.size+' selecionado(s) no total · '+count+
+    ' de '+visible.length+' selecionado(s) entre os anúncios visíveis.';
+}
+$('select-all-visible').onclick=()=>bulkSelectVisible(true);
+$('deselect-all-visible').onclick=()=>bulkSelectVisible(false);
+function clearComparableSelection(){
+  selected.clear();refresh();
+  report('Seleção de comparáveis limpa, sem apagar os anúncios ou o imóvel de referência.');
+}
+$('deselect-all').onclick=clearComparableSelection;
+$('select-all-visible-toggle').onchange=event=>bulkSelectVisible(Boolean(event.target.checked));
+
 function renderCards() {
   const box = $('results'); box.replaceChildren();
   const visible = visibleRecords();
+  syncSelectionToolbar(visible);
   $('filter-status').textContent = visible.length + ' de ' + records.length + ' anúncios visíveis com os filtros atuais.'+(activeLocation?' Município: '+activeLocation.label+'.':'');
   if (!visible.length) {const el=document.createElement('p');el.className='muted';el.textContent='Nenhum anúncio corresponde aos filtros.';box.appendChild(el);}
   for (const p of visible) {
@@ -709,6 +802,9 @@ function renderCards() {
         '</div>':'')+
       '<div class="price">'+safe(money(p.price))+'</div>'+
       (review.unitPrice!==null?'<div class="muted">'+safe(money(review.unitPrice))+' / '+safe(review.unitAreaLabel)+' (preço pedido)</div>':'')+
+      (Array.isArray(p.textEvidence)&&p.textEvidence.length?
+        '<div class="title-evidence"><strong>Indícios no texto (não confirmados):</strong> '+
+        p.textEvidence.map(x=>'<span>'+safe(x.label)+' · '+safe(x.origin)+'</span>').join(' · ')+'</div>':'')+
       (review.issues.length?'<div class="quality-reasons">'+review.issues.map(x=>'<span>'+safe(x)+'</span>').join('')+'</div>':'')+
       '<div class="row"><span class="pill">'+safe(text(areaForLocalComparison(p)))+' '+(['land','farm'].includes(p.type)?'m² terreno':'m² úteis')+'</span>'+
       (['land','farm'].includes(p.type)?'':p.total!==null?'<span class="pill">'+safe(text(p.total))+' m² total</span>':'')+
@@ -736,13 +832,15 @@ function renderCards() {
   renderMarkers();
 }
 function renderComparison() {
-  const arr=records.filter(p=>selected.has(p.key)), container=$('comparison');$('export-btn').disabled=arr.length<2;
+  const all=records.filter(p=>selected.has(p.key));
+  const arr=all.slice(0,18),container=$('comparison');
+  $('export-btn').disabled=all.length<2;
   if(!arr.length){container.textContent='Selecione os anúncios na lista para comparar suas características.';return;}
   const attrs=[['Fonte','source'],['Tipo de imóvel','type'],
     ...(referenceProfile?[['Semelhança com imóvel de referência','referenceMatch']]:[]),
-    ['Triagem dos dados','quality'],['Preço pedido','price'],['R$/m² da área de referência','unitPrice'],['Área útil','usable'],['Área total','total'],['Dormitórios','beds'],['Suítes','suites'],['Banheiros','baths'],['Vagas','spaces'],['Pavimentos','floors'],['Bairro','neighborhood'],['Anunciante','advertiser'],['Comodidades','amenities']];
+    ['Triagem dos dados','quality'],['Indícios textuais (não confirmados)','textEvidence'],['Preço pedido','price'],['R$/m² da área de referência','unitPrice'],['Área útil','usable'],['Área total','total'],['Dormitórios','beds'],['Suítes','suites'],['Banheiros','baths'],['Vagas','spaces'],['Pavimentos','floors'],['Bairro','neighborhood'],['Anunciante','advertiser'],['Comodidades','amenities']];
   let html='<table><thead><tr><th>Característica</th>'+arr.map(p=>'<th>'+safe(p.title.slice(0,70))+'</th>').join('')+'</tr></thead><tbody>';
-  for (const [label,key] of attrs) html+='<tr><th>'+safe(label)+'</th>'+arr.map(p=>'<td>'+safe(key==='referenceMatch'?referenceLabels[assessReference(referenceProfile,p).status]:key==='quality'?qualityLabels[reviewComparable(p).status]:key==='unitPrice'?(reviewComparable(p).unitPrice===null?'—':money(reviewComparable(p).unitPrice)+' / '+reviewComparable(p).unitAreaLabel):key==='price'?money(p.price):key==='type'?(typeLabel[p.type]||'A classificar'):key==='amenities'?(p.amenities.join(', ')||'—'):text(p[key]))+'</td>').join('')+'</tr>';
+  for (const [label,key] of attrs) html+='<tr><th>'+safe(label)+'</th>'+arr.map(p=>'<td>'+safe(key==='referenceMatch'?referenceLabels[assessReference(referenceProfile,p).status]:key==='quality'?qualityLabels[reviewComparable(p).status]:key==='unitPrice'?(reviewComparable(p).unitPrice===null?'—':money(reviewComparable(p).unitPrice)+' / '+reviewComparable(p).unitAreaLabel):key==='price'?money(p.price):key==='type'?(typeLabel[p.type]||'A classificar'):key==='textEvidence'?(p.textEvidence?.map(x=>x.label+' ('+x.origin+')').join(' · ')||'—'):key==='amenities'?(p.amenities.join(', ')||'—'):text(p[key]))+'</td>').join('')+'</tr>';
   const locations=new Set(arr.map(p=>canon(p.city)+'/'+canon(uf(p.state))));
   const types=new Set(arr.map(p=>p.type));
   const cautions=[];
@@ -757,7 +855,9 @@ function renderComparison() {
     if(checks.some(c=>c.status==='insufficient'))cautions.push('Algumas comparações têm dados essenciais ausentes.');
     if(checks.some(c=>c.status==='review'))cautions.push('Existem diferenças relevantes a verificar frente à referência.');
   }
-  container.innerHTML=html+'</tbody></table>'+
+  container.innerHTML=(all.length>18?'<p class="hint">Para manter a tela rápida, a tabela detalhada mostra apenas os primeiros 18 dos '+all.length+
+    ' anúncios selecionados. O indicativo e a exportação consideram todos os selecionados elegíveis.</p>':'')+
+    html+'</tbody></table>'+
     '<p class="hint">Triagem preliminar: '+safe(cautions.join(' ')||'Campos essenciais presentes; confirme os anúncios, localização e homogeneidade.')+
     ' Preços anunciados não representam preços efetivos de venda. Nenhuma avaliação ou PTAM é calculado.</p>';
 }
@@ -833,6 +933,10 @@ function parseExportCsv(raw){
       requestId:typeof row.requestId==='string'?row.requestId.trim().slice(0,150):'',
       executionId:typeof row.executionId==='string'?row.executionId.trim().slice(0,150):'',
       title:bestTitle({title:row.title,neighborhood},type,{neighborhood:neighborhood==='—'?'':neighborhood}),
+      textEvidence:safeTextEvidence(
+        typeof row.textEvidence==='string'&&row.textEvidence.length<6000?
+          (()=>{try{return JSON.parse(row.textEvidence);}catch{return null;}})():null,
+        row.title,row.description),
       link,price:number(row.price),usable:number(row.usable),total:number(row.total),
       beds:number(row.beds),suites:number(row.suites),baths:number(row.baths),
       spaces:number(row.spaces),floors:number(row.floors),
@@ -1321,7 +1425,7 @@ for(const id of ['in-radius','min-beds','dedupe','result-type','quality-filter',
 }
 $('export-btn').onclick=()=>{
   const picked=records.filter(p=>selected.has(p.key));if(picked.length<2)return;
-  const fields=['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser',
+  const fields=['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','textEvidence','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser',
     'ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_area_m2','ref_area_tolerance_percent','ref_status','ref_reasons'];
   const derived=p=>{
     const r=referenceProfile,m=assessReference(r,p),land=r&&['land','farm'].includes(r.type);
@@ -1331,10 +1435,11 @@ $('export-btn').onclick=()=>{
       ref_area_used:r?(land?'total':'usable'):'',
       ref_area_m2:r?(land?r.total:r.usable)??'':'',
       ref_area_tolerance_percent:r?.tolerance??'',ref_status:m?.status??'',
-      ref_reasons:m?.issues.join(' | ')??''
+      ref_reasons:m?.issues.join(' | ')??'',
+      textEvidence:JSON.stringify(p.textEvidence??[])
     };
   };
-  const formulaSensitive=new Set(['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','title','link','neighborhood','city','state','advertiser','ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_status','ref_reasons']);
+  const formulaSensitive=new Set(['source','id','type','offerPurpose','collectedAt','requestId','executionId','searchCriteria','textEvidence','title','link','neighborhood','city','state','advertiser','ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_status','ref_reasons']);
   const csvValue=(key,value)=>{
     const raw=String(value??'');
     // Protege a abertura do CSV em planilhas contra fórmulas injetadas em

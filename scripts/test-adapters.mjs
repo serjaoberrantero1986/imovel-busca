@@ -9,7 +9,7 @@ function el(id){
 }
 const doc={getElementById:el,createElement(){return {value:'',textContent:'',innerHTML:'',classList:{toggle(){}},querySelector(){return {}},appendChild(){}}}};
 const src=readFileSync(new URL('../app.js',import.meta.url),'utf8');
-const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords,guideAdvice,renderGuidedSummary,selected,computeOfferIndicator,renderOfferIndicator,inferOfferPurpose,setReferenceForTest:reference=>{referenceProfile=reference},planMixedSearch,mixedTargets,executeMixedSearch,performMixedSearch,suspectedCrossPortalRepeat})',{document:doc,window:{},console,URL});
+const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords,guideAdvice,renderGuidedSummary,selected,computeOfferIndicator,renderOfferIndicator,inferOfferPurpose,setReferenceForTest:reference=>{referenceProfile=reference},planMixedSearch,mixedTargets,executeMixedSearch,performMixedSearch,suspectedCrossPortalRepeat,bulkSelectVisible,syncSelectionToolbar,extractTextEvidence,clearComparableSelection})',{document:doc,window:{},console,URL});
 test('VivaReal PLP: preços em array e coordenadas aninhadas',()=>{
   const x=ctx.payload({data:{source:'vivareal.com.br',items:[{
     id:'100',title:'Casa à venda',unitTypes:['HOME'],
@@ -781,4 +781,78 @@ test('Pesquisa mista barra filtros inválidos antes de consumir créditos',()=>{
  assert.throws(()=>ctx.planMixedSearch({...base,priceMin:-1},targets),/valores de preço e área/);
  assert.throws(()=>ctx.planMixedSearch({...base,businessType:'unknown'},targets),/venda ou aluguel/);
  assert.throws(()=>ctx.planMixedSearch({...base,propertyType:'other'},targets),/tipologia compatível/);
+});
+
+
+test('Seleção por cards: ticker seleciona todos os anúncios VISÍVEIS e não afeta fontes',()=>{
+ ctx.records.length=0;ctx.selected.clear();
+ const base={type:'house',source:'test',city:'Salto de Pirapora',state:'SP',
+   price:300000,usable:110,total:160,beds:3,suites:1,baths:2,spaces:2,
+   neighborhood:'Centro',lat:null,lng:null,amenities:[],detailed:false};
+ ctx.records.push(
+  {...base,id:'a',key:'test:a',title:'Casa 1'},
+  {...base,id:'b',key:'test:b',title:'Casa 2'},
+  {...base,id:'c',key:'test:c',title:'Casa 3',price:500000}
+ );
+ el('result-type').value='';el('filter-price-max').value='350000';el('quality-filter').value='';
+ el('mixed-zap').checked=true;el('mixed-olx').checked=false;
+ assert.equal(ctx.visibleRecords().length,2);
+ ctx.bulkSelectVisible(true);
+ assert.equal(ctx.selected.size,2);
+ assert.equal(el('select-all-visible-toggle').checked,true);
+ assert.match(el('selection-counter').textContent,/2 de 2/);
+ assert.equal(el('mixed-zap').checked,true);
+ assert.equal(el('mixed-olx').checked,false);
+ el('filter-price-max').value='';
+ ctx.bulkSelectVisible(true);
+ assert.equal(ctx.selected.size,3);
+ ctx.bulkSelectVisible(false);
+ assert.equal(ctx.selected.size,0);
+ ctx.selected.add('test:a');ctx.selected.add('test:b');
+ el('filter-price-min').value='400000';
+ ctx.bulkSelectVisible(true);
+ assert.equal(ctx.selected.size,3);
+ ctx.bulkSelectVisible(false);
+ assert.equal(ctx.selected.size,2); // outros não visíveis continuam selecionados
+ ctx.clearComparableSelection();
+ assert.equal(ctx.selected.size,0);
+ el('filter-price-min').value='';ctx.records.length=0;
+});
+
+test('Interpretador de títulos: recupera indícios sem confundir área construída com área útil',()=>{
+ const samples=[
+  ['Casa com 2 dormitórios à venda, 52 m² por R$ 360.000', 'area',52,'não especificada'],
+  ['Casa moderna de 333 m² com 3 Suítes e Piscina','area',333,'não especificada'],
+  ['Casa com área privativa de 100 m² e 2 suítes','area',100,'útil/privativa'],
+  ['Casa com 200m2 de área construída e 250 m² de terreno','area',200,'construída']
+ ];
+ for(const [title,field,value,kind] of samples){
+  const evidence=ctx.extractTextEvidence(title);
+  assert.ok(evidence.some(x=>x.field===field&&x.value===value&&x.kind===kind),
+    'Falhou: '+title+' => '+JSON.stringify(evidence));
+ }
+ const insights=ctx.extractTextEvidence('Casa Térrea Moderna de 333 m² com 3 Suítes, Piscina e Campo');
+ assert.equal(insights.find(x=>x.field==='suites').value,3);
+ assert.ok(!insights.some(x=>x.field==='area'&&x.kind==='útil/privativa'));
+ const p=ctx.normalized({id:'olx52',title:'Casa com 2 dormitórios, 52 m² por R$ 360.000',
+   unitTypes:['HOME'],price:360000,address:{city:'Salto de Pirapora',state:'SP'}},'olx.com.br');
+ assert.equal(p.usable,null,'A área desconhecida no título não pode entrar no cálculo automaticamente');
+ assert.equal(p.suites,null);
+ assert.ok(p.textEvidence.some(x=>x.field==='area'&&x.value===52));
+});
+
+test('CSV com campo adicional textEvidence preserva indícios e CSV antigo extrai do título',()=>{
+ const json=JSON.stringify([{field:'suites',value:3,origin:'título',label:'3 suítes'}]);
+ const encode=s=>'"'+String(s??'').replace(/"/g,'""')+'"';
+ const headers='source;id;type;title;link;price;usable;total;city;state;textEvidence';
+ const data=['olx.com.br','1357','house','Casa 333 m² com 3 suítes',
+  'https://www.olx.com.br/imoveis/anuncio-1357','900000','','','Salto de Pirapora','SP',json];
+ const row=ctx.parseExportCsv([headers,data.map(encode).join(';')].join('\n'))[0];
+ assert.equal(row.usable,null);
+ assert.ok(row.textEvidence.some(e=>e.field==='suites'&&e.value===3));
+ const legacy=ctx.parseExportCsv([
+  'source;id;type;title;link;price;usable;total;city;state',
+  data.slice(0,10).map(encode).join(';')
+ ].join('\n'))[0];
+ assert.ok(legacy.textEvidence.some(e=>e.field==='area'&&e.value===333));
 });

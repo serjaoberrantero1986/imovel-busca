@@ -1,6 +1,18 @@
 # Imóvel Busca — laboratório independente
 Este repositório **não** conecta ao Web Imóveis, Supabase ou domínio de produção. Não contém anúncios fictícios e não calcula valor de mercado/PTAM.
 
+## Seleção em massa de anúncios e campos encontrados nos textos
+
+O **ticker de seleção** fica imediatamente acima dos **cards de imóveis** (e não na seleção dos fornecedores): marque **Selecionar os imóveis visíveis**, clique **Selecionar todos os visíveis**, **Desmarcar todos os visíveis** ou **Limpar toda a seleção**. O contador mostra quantos imóveis estão selecionados na sessão e quantos deles correspondem aos filtros atuais. Um anúncio oculto por filtro permanece selecionado até ser removido explicitamente. A seleção **não** significa que o imóvel foi aprovado como comparável.
+
+Para listas grandes, a tabela técnica mostra até 18 anúncios e o resumo descritivo mostra até 12; **o indicativo e a exportação continuam processando todos os imóveis selecionados que forem elegíveis**. O sistema pode ficar lento com muitas milhares de linhas, pois ainda não há paginação virtualizada nem persistência por sessão.
+
+**Informações do anúncio que aparecem somente no texto:** títulos e descrições passam por extração conservadora de números expressamente acompanhados de unidades/atributos (área em m², dormitórios, suítes, banheiros e vagas). Cada indício é rotulado com origem **título** ou **descrição** e como **não confirmado**; o CSV novo pode preservar `textEvidence`. Anúncios em CSV legado também têm o título reanalisado ao importar.
+
+**Segurança da avaliação:** mencionar `333 m²` não indica se é área útil, construída ou de terreno. A medida textual **não é inserida automaticamente** em `usable`/`total` e **não habilita automaticamente o indicador de preços**. Do mesmo modo, uma menção a `3 suítes` no título gera alerta para conferência, mas não substitui a ficha estruturada. O próximo passo de produto é permitir confirmação humana com rastreamento da evidência e eventual busca de detalhes PDP autorizada (com créditos).
+
+**Dados reais revisados:** o CSV do usuário `comparaveis-imovel-busca (5).csv` contém 69 anúncios selecionados: 50 OLX, 15 Chaves na Mão e 4 VivaReal; 52 foram classificados como comparação incompleta. Na OLX, 50/50 vieram sem área útil estruturada, apesar de ao menos 4 títulos mencionarem `m²` e 10 mencionarem suítes; no Chaves na Mão, 2/15 vieram sem área útil. Há 7 anúncios do Chaves na Mão com área útil numericamente maior que área total, incluindo metragens totais `1` e `5.806`, que exigem auditoria do esquema/da unidade; não converter automaticamente valores. Os dois CSVs enviados eram idênticos (mesmo hash SHA-256).
+
 ## Pesquisa mista — escolha uma, várias ou até cinco fontes
 
 Na aba **Buscar pela GeckoAPI (avançado)**, em **Buscar lista (PLP)**, marque **Pesquisar em várias fontes de uma vez**. O formulário passa a oferecer as fontes **ZAP Imóveis, VivaReal, OLX, Chaves na Mão e Imovelweb**. Você pode marcar uma ou várias. **Selecionar 4 fontes sem URL** marca ZAP, VivaReal, OLX e Chaves; **Selecionar as 5 fontes** inclui também o Imovelweb, que exige informar uma **URL HTTPS pública de resultados terminada em .html**. Sem essa URL, o botão de pesquisa não realiza as consultas e informa o motivo.
