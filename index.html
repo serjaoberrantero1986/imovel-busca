@@ -267,7 +267,8 @@
       <p class="hint">O laboratório inclui todos os anúncios automaticamente e filtra quais são aproveitáveis no cálculo. Você pode revisar e ajustar a seleção nos cards. Não precisa exportar um arquivo para obter o indicativo.</p>
     </div>
   </div>
-  <section class="eligibility-panel" aria-labelledby="eligibility-heading">
+  <p id="review-saved" class="review-saved hidden" role="status" aria-live="polite"></p>
+<section class="eligibility-panel" aria-labelledby="eligibility-heading">
     <div class="eligibility-heading"><div>
       <h3 id="eligibility-heading">Limpeza automática da amostra</h3>
       <p class="hint">O sistema testa todos os anúncios selecionados. Nem toda oferta é aproveitável, e as exclusões ficam documentadas.</p>
@@ -294,6 +295,10 @@
       </div>
       <p id="review-progress" class="review-progress" aria-live="polite"></p>
       <div id="eligibility-list" class="eligibility-list"></div>
+      <details class="reference-extra" style="margin-top:12px"><summary>Gerenciar conferências guardadas neste navegador</summary>
+        <p class="hint">As revisões ficam apenas neste navegador. Não há sincronização com outros computadores nem validação de autoria.</p>
+        <button id="clear-browser-reviews" class="secondary" type="button">Apagar revisões guardadas neste navegador</button>
+      </details>
       <button id="eligibility-more" type="button" class="secondary hidden">Mostrar mais anúncios</button>
     </details>
   </section>
@@ -362,7 +367,7 @@
 </div>
 <p class="hint">Filtros de metragem usam área total para terrenos e imóveis rurais e área útil para os demais. Anúncios sem essa área são excluídos apenas quando o filtro de metragem está ativo.</p></details>
 <p id="filter-status" class="muted" style="margin:0 0 12px"></p>
-<p id="review-saved" class="review-saved hidden" role="status" aria-live="polite"></p>
+<p id="review-saved-cards" class="review-saved hidden" role="status" aria-live="polite"></p>
 <div class="selection-toolbar" aria-label="Selecionar anúncios comparáveis">
   <label class="inline selection-auto"><input id="auto-select-new" type="checkbox" checked>
     <strong>Incluir automaticamente todos os novos anúncios na triagem</strong>
