@@ -62,7 +62,9 @@ Para testar: abra Consultar GeckoAPI, preencha cidade e UF (PLP) ou URL (PDP), i
 - O campo de código de acesso é enviado ao servidor por HTTPS e não é guardado em armazenamento local pelo aplicativo.
 - Função serverless valida operação e domínios, aplica tempo limite e contém limitador básico em memória (não adequado a ataques distribuídos ou muitos usuários).
 - O site pode ser acessível publicamente dependendo das proteções configuradas na Vercel. Não insira dados confidenciais nas caixas de importação.
-- O navegador consulta tiles do OpenStreetMap. Para produção comercial e alto tráfego é necessário provedor de mapas apropriado.
+- O mapa usa **OpenFreeMap** (estilo vetorial Positron) por meio de **MapLibre GL JS** e adaptador Leaflet, preservando marcadores, comparação geográfica e interações anteriores. Isso substitui as requisições diretas aos tiles públicos da OpenStreetMap Foundation, que estavam bloqueadas com HTTP 403 no laboratório.
+- O OpenFreeMap permite uso comercial sem chave de API, conforme documentação do fornecedor: https://openfreemap.org/quick_start/ e https://openfreemap.org/. Os créditos cartográficos OpenStreetMap/OpenMapTiles/OpenFreeMap são exibidos no mapa. O serviço público **não oferece SLA**; para uso comercial com garantias, avaliar infraestrutura própria ou contrato com provedor dedicado.
+- Se as bibliotecas MapLibre ou o serviço de estilo ficarem indisponíveis, a aplicação exibe aviso no mapa sem apagar os anúncios, os comparáveis ou o CSV. Se houver problema de carregamento, atualize a página sem limpar os dados da sessão; recarregar pode apagar a sessão, pois não existe persistência.
 - usableAreas e totalAreas são separados; campo ausente nunca é convertido automaticamente em metragem presumida.
 - Não certifica coordenadas nem deduplica automaticamente anúncios de fontes diferentes. Apenas sinaliza possíveis coincidências por município, UF, bairro, tipologia, valor e área próximos; a decisão de excluir duplicados é humana.
 - Dados essenciais completos **não significam comparável aprovado**. A classificação não prova homogeneidade, conservação, documentação ou validade dos anúncios; informações ausentes nunca são inferidas de outras metragens.
@@ -73,3 +75,9 @@ Para testar: abra Consultar GeckoAPI, preencha cidade e UF (PLP) ou URL (PDP), i
 
 ## Desenvolvimento
 Node 20+. A aplicação usa HTML/JS sem etapa de build e uma função Node em api/extract.js. npm run check faz verificação sintática de arquivos JS.
+
+## Correção dos mapas bloqueados (20/10/2026)
+
+O erro visual `403 Access blocked / tile usage policy` é retornado pelos **servidores de imagens** da OpenStreetMap Foundation, e não pela API de imóveis. Os anúncios e coordenadas não são a causa do bloqueio. O projeto agora usa mapas vetoriais do OpenFreeMap e mostra aviso quando não consegue carregar o fundo cartográfico. **Não** tente resolver alternando para outros subdomínios `a.tile.openstreetmap.org`, `b.tile.openstreetmap.org`, usando proxy para contornar o bloqueio, nem removendo atribuição.
+
+No CSV de teste `comparaveis-imovel-busca (3).csv` de três anúncios selecionados para **Casa Ana Guilherme**, os dois primeiros possuem coordenadas `-23.615262,-47.565947` e `-23.666246,-47.588038` e o terceiro não possui coordenadas. A referência foi cadastrada com **110 m² úteis**; todos os anúncios ficaram classificados como `review`, não como `insufficient` nem como estimativa de preço. A ausência de coordenadas impede o marcador do terceiro, mas não impede sua comparação.
