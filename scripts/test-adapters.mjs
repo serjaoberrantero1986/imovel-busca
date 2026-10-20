@@ -4,12 +4,12 @@ import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 const els=new Map();
 function el(id){
-  if(!els.has(id))els.set(id,{value:id==='radius'?'5':'',checked:false,disabled:false,innerHTML:'',textContent:'',classList:{toggle(){},add(){},remove(){}},children:[],addEventListener(){},replaceChildren(){},appendChild(){},querySelector(){return {}}});
+  if(!els.has(id))els.set(id,{value:id==='radius'?'5':'',checked:false,disabled:false,innerHTML:'',textContent:'',classList:{toggle(){},add(){},remove(){}},children:[],addEventListener(){},replaceChildren(){this.children=[];},appendChild(item){this.children.push(item);},querySelector(){return {}}});
   return els.get(id);
 }
 const doc={getElementById:el,createElement(){return {value:'',textContent:'',innerHTML:'',classList:{toggle(){}},querySelector(){return {}},appendChild(){}}}};
 const src=readFileSync(new URL('../app.js',import.meta.url),'utf8');
-const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords,guideAdvice,renderGuidedSummary,selected,computeOfferIndicator,renderOfferIndicator,inferOfferPurpose,setReferenceForTest:reference=>{referenceProfile=reference}})',{document:doc,window:{},console,URL});
+const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords,guideAdvice,renderGuidedSummary,selected,computeOfferIndicator,renderOfferIndicator,inferOfferPurpose,setReferenceForTest:reference=>{referenceProfile=reference},planMixedSearch,mixedTargets,executeMixedSearch,performMixedSearch,suspectedCrossPortalRepeat})',{document:doc,window:{},console,URL});
 test('VivaReal PLP: preços em array e coordenadas aninhadas',()=>{
   const x=ctx.payload({data:{source:'vivareal.com.br',items:[{
     id:'100',title:'Casa à venda',unitTypes:['HOME'],
@@ -596,4 +596,189 @@ test('Interface mostra indicativo como informação principal e CSV apenas opcio
  assert.ok(indicative>0&&guide>indicative&&exportButton>guide);
  assert.match(html,/Exportar CSV \(opcional\)/);
  assert.match(html,/não precisa exportar um arquivo/i);
+});
+
+
+test('Pesquisa multifonte: uma, quatro ou cinco fontes; URLs e filtros respeitados por portal',()=>{
+ const base={target:'zapimoveis.com.br',type:'plp',city:'Salto de Pirapora',state:'SP',
+   page:1,propertyType:'house',businessType:'sale',keyword:'casa',
+   areaMin:80,areaMax:160,priceMin:250000,sort:'relevance',
+   searchNear:true,latitude:-23.65,longitude:-47.58,
+   url:'https://www.vivareal.com.br/imoveis/'};
+ const ordinary=['zapimoveis.com.br','vivareal.com.br','olx.com.br','chavesnamao.com.br'];
+ const plans=ctx.planMixedSearch(base,ordinary,{olxRegion:'Regiao de Sorocaba',olxCategory:'imoveis/venda/casas'});
+ assert.equal(plans.length,4);
+ assert.equal(plans.every(p=>p.type==='plp'&&p.page===1&&p.city==='Salto de Pirapora'),true);
+ assert.equal(plans.every(p=>p.url===undefined&&p.sort===undefined),true);
+ assert.equal(plans[0].searchNear,true);
+ assert.equal(plans[1].searchNear,true);
+ assert.equal(plans[2].searchNear,undefined);
+ assert.equal(plans[2].categoryPath,'imoveis/venda/casas');
+ assert.equal(plans[2].region,'Regiao de Sorocaba');
+ assert.equal(plans[3].searchNear,true);
+ assert.equal(plans[0].priceMin,250000);
+ assert.equal(ctx.planMixedSearch(base,['olx.com.br']).length,1);
+ assert.throws(()=>ctx.planMixedSearch(base,[]),/Selecione/);
+ assert.throws(()=>ctx.planMixedSearch({...base,type:'pdp'},ordinary),/listas de anúncios/);
+ assert.throws(()=>ctx.planMixedSearch(base,['olx.com.br','olx.com.br']),/repetida/);
+ assert.throws(()=>ctx.planMixedSearch(base,['olx.com.br','portal-falso']),/inválida/);
+ assert.throws(()=>ctx.planMixedSearch(base,['imovelweb.com.br']),/URL pública/);
+ assert.throws(()=>ctx.planMixedSearch(base,['imovelweb.com.br'],
+   {imovelwebUrl:'https://www.zapimoveis.com.br/imoveis/casas.html'}),/Imovelweb exige/);
+ assert.throws(()=>ctx.planMixedSearch(base,['imovelweb.com.br'],
+   {imovelwebUrl:'http://www.imovelweb.com.br/casas.html'}),/Imovelweb exige/);
+ assert.throws(()=>ctx.planMixedSearch(base,['imovelweb.com.br'],
+   {imovelwebUrl:'https://www.imovelweb.com.br/imoveis/casas/'}),/Imovelweb exige/);
+ const all=ctx.planMixedSearch(base,[...ordinary,'imovelweb.com.br'],
+   {imovelwebUrl:'https://www.imovelweb.com.br/casas-venda-salto-de-pirapora-sp.html'});
+ assert.equal(all.length,5);
+ assert.equal(all[4].url,'https://www.imovelweb.com.br/casas-venda-salto-de-pirapora-sp.html');
+ assert.equal(all[4].propertyType,'house');
+ assert.equal(all[4].searchNear,undefined);
+});
+
+test('Interface multifonte seleciona quatro fontes sem URL ou todas com orientação de custo',()=>{
+ el('operation').value='plp';
+ el('portal').value='zapimoveis.com.br';
+ el('mixed-enabled').checked=true;
+ el('mixed-select-structured').onclick();
+ assert.equal(ctx.mixedTargets().length,4);
+ assert.equal(ctx.mixedTargets().includes('imovelweb.com.br'),false);
+ assert.equal(el('mixed-picker').classList!==undefined,true);
+ assert.match(el('mixed-cost').textContent,/4 consulta/);
+ el('mixed-select-all').onclick();
+ assert.equal(ctx.mixedTargets().length,5);
+ assert.match(el('mixed-cost').textContent,/5 consulta/);
+ el('mixed-select-none').onclick();
+ assert.equal(ctx.mixedTargets().length,0);
+ el('mixed-enabled').checked=false;
+ el('operation').value='';
+});
+
+test('Execução multifonte mantém origem, cidade auditada, erros isolados e uma chamada por fonte',async()=>{
+ const targets=['zapimoveis.com.br','olx.com.br','vivareal.com.br'];
+ const plans=ctx.planMixedSearch({
+   target:'zapimoveis.com.br',type:'plp',city:'Salto de Pirapora',state:'SP',page:1,businessType:'sale'
+ },targets);
+ const called=[],states=[];
+ const res=await ctx.executeMixedSearch(plans,async query=>{
+   called.push(query.target);
+   if(query.target==='olx.com.br')throw new Error('Não foi possível consultar OLX');
+   return {data:{source:'fonte-incorreta',items:[
+     {id:query.target+'-ok',unitTypes:['HOME'],title:'Casa de teste',
+       address:{city:'Salto de Pirapora',state:'SP'},prices:{mainValue:300000},attributes:{usableAreas:[110]}},
+     {id:query.target+'-other',unitTypes:['HOME'],title:'Casa fora do município',
+       address:{city:'Sorocaba',state:'SP'},prices:{mainValue:300000},attributes:{usableAreas:[110]}}
+   ],locationAudit:{providerItems:2,acceptedItems:1,discardedOtherCities:1,requestId:'q-'+query.target}}};
+ },updates=>states.push(Array.from(updates,r=>r.state).join(',')));
+ assert.deepEqual(called,targets);
+ assert.equal(states.at(-1),'done,error,done');
+ assert.equal(res[0].items.length,1);
+ assert.equal(res[0].items[0].source,targets[0]);
+ assert.equal(res[0].items[0].requestId,'q-'+targets[0]);
+ assert.equal(res[0].items[0].collectedAt.endsWith('Z'),true);
+ assert.equal(res[0].discarded,1);
+ assert.equal(res[1].state,'error');
+ assert.match(res[1].error,/OLX/);
+ assert.equal(res[2].items.length,1);
+});
+test('Execução multifonte interrompe próximas chamadas ao receber HTTP 429',async()=>{
+ const plans=ctx.planMixedSearch({target:'zapimoveis.com.br',type:'plp',
+   city:'Salto de Pirapora',state:'SP',page:1,businessType:'sale'},
+   ['zapimoveis.com.br','vivareal.com.br','olx.com.br']);
+ let calls=0;
+ const results=await ctx.executeMixedSearch(plans,async()=>{
+   calls++;
+   const error=new Error('Limite atingido');error.httpStatus=429;throw error;
+ });
+ assert.equal(calls,1);
+ assert.equal(results[0].state,'error');
+ assert.equal(results[1].state,'skipped');
+ assert.equal(results[2].state,'skipped');
+});
+test('Pesquisa multifonte agrega anúncios sem CSV e mantém um único total por sessão',async()=>{
+ ctx.records.length=0;ctx.selected.clear();
+ el('city').value='Salto de Pirapora';el('state').value='SP';
+ el('result-type').value='';el('min-beds').value='';
+ const plans=ctx.planMixedSearch({target:'zapimoveis.com.br',type:'plp',
+   city:'Salto de Pirapora',state:'SP',page:1,businessType:'sale'},
+   ['zapimoveis.com.br','vivareal.com.br']);
+ const answer=await ctx.performMixedSearch(plans,async q=>({
+   data:{source:q.target,totalResults:195,locationAudit:{providerItems:1,acceptedItems:1,
+     discardedOtherCities:0,discardedMissingLocation:0,requestId:'search-test'},
+     items:[{id:'same-number-id',unitTypes:['HOME'],title:'Casa',address:{city:q.city,state:q.state},
+       prices:{mainValue:300000},attributes:{usableAreas:[110]}}]}
+ }));
+ assert.equal(answer.length,2);
+ assert.equal(ctx.records.length,2);
+ assert.equal(new Set(ctx.records.map(p=>p.source)).size,2);
+ assert.equal(el('mixed-results').children.length,3); // cabeçalho e duas fontes
+ assert.match(el('status').textContent,/2\/2 fonte/);
+ assert.match(el('status').textContent,/2 anúncio/);
+ ctx.records.length=0;
+});
+test('Indicativo não duplica imóveis suspeitos entre portais sem apagar os registros',()=>{
+ const ref=ctx.makeReference({type:'house',city:'Salto de Pirapora',state:'SP',usable:110});
+ const base={type:'house',city:'Salto de Pirapora',state:'SP',price:300000,usable:110,
+   neighborhood:'Centro',beds:3,suites:1,baths:2,spaces:2,lat:null,lng:null};
+ const a={...base,key:'zap:1',source:'zapimoveis.com.br',id:'1'};
+ const b={...base,key:'viva:2',source:'vivareal.com.br',id:'2',price:301500,usable:111};
+ const c={...base,key:'olx:3',source:'olx.com.br',id:'3',price:350000,usable:112};
+ assert.equal(ctx.suspectedCrossPortalRepeat(a,b),true);
+ assert.equal(ctx.suspectedCrossPortalRepeat(a,{...b,neighborhood:'Outro'}),false);
+ const indicator=ctx.computeOfferIndicator(ref,[a,b,c]);
+ assert.equal(indicator.status,'ready');
+ assert.equal(indicator.included.length,2);
+ assert.equal(indicator.suspectedDuplicates.length,1);
+ assert.equal(indicator.excluded.length,1);
+ assert.match(indicator.excluded[0].reason,/Possível duplicidade/);
+ assert.equal(indicator.selectedCount,3);
+});
+
+
+test('CSV da pesquisa mista preserva proveniência quando existe e aceita ausência em legado',()=>{
+ const headers='source;id;type;offerPurpose;title;link;price;usable;total;city;state;collectedAt;requestId;executionId;searchCriteria';
+ const criteria=JSON.stringify({target:'vivareal.com.br',type:'plp',city:'Salto de Pirapora',state:'SP',page:1});
+ const encode=x=>'"'+String(x??'').replace(/"/g,'""')+'"';
+ const value=['vivareal.com.br','ref-300','house','sale','Casa perto do Centro',
+  'https://www.vivareal.com.br/imovel/casa-em-salto-de-pirapora-id-300/',
+  '300000','110','150','Salto de Pirapora','SP',
+  '2026-10-20T03:30:00.000Z','query-support-12','execution-33',criteria].map(encode).join(';');
+ const parsed=ctx.parseExportCsv([headers,value].join('\n'));
+ assert.equal(parsed.length,1);
+ assert.equal(parsed[0].requestId,'query-support-12');
+ assert.equal(parsed[0].executionId,'execution-33');
+ assert.equal(parsed[0].collectedAt,'2026-10-20T03:30:00.000Z');
+ assert.equal(JSON.parse(parsed[0].searchCriteria).target,'vivareal.com.br');
+ const old=ctx.parseExportCsv([
+   'source;id;type;title;link;price;usable;total;city;state',
+   ['vivareal.com.br','legacy-1','house','Casa antiga',
+    'https://www.vivareal.com.br/imovel/casa-id-1/','250000','100','150','Salto de Pirapora','SP'].map(encode).join(';')
+ ].join('\n'));
+ assert.equal(old.length,1);
+ assert.equal(old[0].collectedAt,'');
+ assert.equal(old[0].requestId,'');
+ assert.equal(old[0].searchCriteria,'');
+});
+test('Suposta duplicidade entre portais exige informações coerentes e nunca exclui um só portal por regra cross-source',()=>{
+ const a={source:'zapimoveis.com.br',type:'house',city:'Salto de Pirapora',
+   state:'SP',neighborhood:'Centro',price:300000,usable:110,beds:3,suites:1,baths:2,spaces:2};
+ const b={...a,source:'vivareal.com.br',price:301000,usable:111};
+ assert.equal(ctx.suspectedCrossPortalRepeat(a,b),true);
+ assert.equal(ctx.suspectedCrossPortalRepeat(a,{...b,suites:2}),false);
+ assert.equal(ctx.suspectedCrossPortalRepeat(a,{...b,neighborhood:'—'}),false);
+ assert.equal(ctx.suspectedCrossPortalRepeat(a,{...b,price:400000}),false);
+ assert.equal(ctx.suspectedCrossPortalRepeat(a,{...b,source:'zapimoveis.com.br'}),false);
+});
+
+test('Pesquisa mista barra filtros inválidos antes de consumir créditos',()=>{
+ const base={target:'zapimoveis.com.br',type:'plp',city:'Salto de Pirapora',
+   state:'SP',page:1,businessType:'sale'};
+ const targets=['zapimoveis.com.br'];
+ assert.throws(()=>ctx.planMixedSearch({...base,page:0},targets),/página/);
+ assert.throws(()=>ctx.planMixedSearch({...base,priceMin:400000,priceMax:200000},targets),/preço mínimo/);
+ assert.throws(()=>ctx.planMixedSearch({...base,areaMin:300,areaMax:100},targets),/área mínima/);
+ assert.throws(()=>ctx.planMixedSearch({...base,priceMin:-1},targets),/valores de preço e área/);
+ assert.throws(()=>ctx.planMixedSearch({...base,businessType:'unknown'},targets),/venda ou aluguel/);
+ assert.throws(()=>ctx.planMixedSearch({...base,propertyType:'other'},targets),/tipologia compatível/);
 });

@@ -27,6 +27,22 @@
 .offer-empty h3{font-size:18px;color:#253a55;margin:10px 0}.offer-empty p{font-size:13px;color:#66758a;line-height:1.6}.offer-note{font-weight:700}
 .guide-divider{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-top:22px;border-top:1px solid #e4eaf1;padding-top:15px;font-size:14px;color:#27405c}.export-tools{display:flex;flex-wrap:wrap;align-items:center;gap:11px;padding-top:18px;margin-top:17px;border-top:1px solid #e5ebf2}
 @media(max-width:620px){.offer-indicator{padding:17px}.offer-band{grid-template-columns:1fr;gap:10px}.offer-band strong{font-size:18px}.offer-value{letter-spacing:-1px}}
+
+.mixed-switch{display:grid;gap:6px;padding:11px 12px;background:#f4f8fc;border:1px solid #dce6f1;border-radius:12px;align-self:stretch}
+.mixed-switch label.inline{font-size:13px;color:#203b54;font-weight:750}
+.mixed-picker{border:1px solid #dce4ee;border-radius:13px;padding:14px;display:grid;gap:12px;min-width:0;background:#fbfcff}
+.mixed-picker legend{font-size:13px;font-weight:800;color:#243d58;padding:0 7px}
+.mixed-actions{display:flex;flex-wrap:wrap;gap:7px}
+.mixed-actions button{font-size:11px;padding:8px 11px}
+.mixed-portal-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+.mixed-portal-grid .inline{font-size:12px;color:#263f5b}
+.mixed-imovelweb-field{max-width:720px}
+.mixed-cost{background:#fff4eb;border:1px solid #f2d6be;border-radius:10px;padding:12px;color:#815229;font-weight:750;font-size:12px;line-height:1.5}
+.mixed-results{border:1px solid #dfe8f0;border-radius:13px;padding:12px;background:#f8fafc;font-size:12px;line-height:1.6}
+.mixed-results h3{margin:0 0 10px;font-size:13px;color:#28445f}
+.mixed-source{display:flex;justify-content:space-between;gap:9px;flex-wrap:wrap;border-bottom:1px solid #e0e8ef;padding:7px 0}
+.mixed-source:last-child{border-bottom:0}.mixed-source strong{color:#28445f}.mixed-source .failure{color:#9b3033}.mixed-source .success{color:#2b7142}.mixed-source .pending{color:#7e653d}
+@media(max-width:620px){.mixed-portal-grid{grid-template-columns:1fr}.mixed-picker{padding:10px}.mixed-actions button{flex:1}}
 </style></head>
 <body>
 <header><div class="top"><div><div class="logo">⌖ Imóvel <b>Busca</b></div><small>Laboratório independente de pesquisa e comparação</small></div><span class="eyebrow">AMBIENTE EXPERIMENTAL</span></div></header>
@@ -107,7 +123,32 @@
 <section class="panel hidden" id="api-panel">
 <div class="grid">
 <label class="field">Operação<select id="operation"><option value="plp">Buscar lista (PLP)</option><option value="pdp">Detalhar imóvel (PDP)</option></select></label>
-<label class="field">Portal<select id="portal"><option value="zapimoveis.com.br">ZAP Imóveis</option><option value="imovelweb.com.br">Imovelweb</option><option value="olx.com.br">OLX</option><option value="vivareal.com.br">VivaReal</option><option value="chavesnamao.com.br">Chaves na Mão</option></select></label>
+<label class="field" id="single-portal-wrap">Portal<select id="portal"><option value="zapimoveis.com.br">ZAP Imóveis</option><option value="imovelweb.com.br">Imovelweb</option><option value="olx.com.br">OLX</option><option value="vivareal.com.br">VivaReal</option><option value="chavesnamao.com.br">Chaves na Mão</option></select></label>
+<div class="span3 mixed-switch" id="mixed-switch-wrap">
+  <label class="inline"><input type="checkbox" id="mixed-enabled"> <strong>Pesquisar em várias fontes de uma vez</strong></label>
+  <span class="hint">As fontes serão consultadas individualmente, uma página por portal. Você verá todos os resultados reunidos abaixo.</span>
+</div>
+<fieldset id="mixed-picker" class="span3 mixed-picker hidden" aria-label="Escolha os portais">
+  <legend>Escolha uma ou mais fontes</legend>
+  <div class="mixed-actions">
+    <button type="button" id="mixed-select-structured" class="secondary">Selecionar 4 fontes sem URL</button>
+    <button type="button" id="mixed-select-all" class="secondary">Selecionar as 5 fontes</button>
+    <button type="button" id="mixed-select-none" class="secondary">Desmarcar todas</button>
+  </div>
+  <div class="mixed-portal-grid">
+    <label class="inline"><input type="checkbox" id="mixed-zap" name="mixed-portal" value="zapimoveis.com.br" checked> ZAP Imóveis</label>
+    <label class="inline"><input type="checkbox" id="mixed-viva" name="mixed-portal" value="vivareal.com.br" checked> VivaReal</label>
+    <label class="inline"><input type="checkbox" id="mixed-olx" name="mixed-portal" value="olx.com.br" checked> OLX</label>
+    <label class="inline"><input type="checkbox" id="mixed-chaves" name="mixed-portal" value="chavesnamao.com.br" checked> Chaves na Mão</label>
+    <label class="inline"><input type="checkbox" id="mixed-imovelweb" name="mixed-portal" value="imovelweb.com.br"> Imovelweb (exige URL)</label>
+  </div>
+  <label class="field mixed-imovelweb-field hidden" id="mixed-imovelweb-wrap">URL pública de resultados do Imovelweb (.html)
+    <input id="mixed-imovelweb-url" type="url" placeholder="https://www.imovelweb.com.br/...html">
+  </label>
+  <p class="hint">ZAP, VivaReal, OLX e Chaves usam filtros adaptados à respectiva fonte. Imovelweb somente por URL pública .html; quando selecionado, é obrigatório informá-la. Filtros incompatíveis são aplicados apenas no laboratório, e todos os anúncios passam por conferência de cidade e UF.</p>
+  <p class="mixed-cost" id="mixed-cost" aria-live="polite">4 fontes selecionadas: até 4 chamadas pagas (1 página por fonte).</p>
+  <button id="mixed-fill-reference" class="secondary" type="button">Preencher localização e características usando meu imóvel</button>
+</fieldset>
 <label class="field">Cidade<input id="city" value="Salto de Pirapora"></label>
 <label class="field">UF<input id="state" value="SP" maxlength="2"></label>
 <label class="field">Página<input id="page" type="number" value="1" min="1" max="10"></label>
@@ -134,6 +175,7 @@
 <label class="field span3 hidden" id="search-url-wrap">URL da página de resultados<input id="search-url" placeholder="https://www.olx.com.br/..."></label>
 <label class="field span3"><span class="hint" id="url-help">Uma URL de pesquisa pode substituir os filtros estruturados do portal. A cidade/UF continuam validadas na resposta.</span></label>
 <div class="span3 controls"><button class="primary" id="api-btn">Consultar API (consome créditos)</button><span class="muted" id="provider-hint"></span></div>
+<div id="mixed-results" class="span3 mixed-results hidden" aria-live="polite" aria-label="Resultados por fonte"></div>
 </div>
 <p class="hint">Consulta real pode consumir créditos. A chave GeckoAPI fica no servidor, nunca no navegador. Não informe sua chave privada no campo de código de acesso.</p>
 </section>
