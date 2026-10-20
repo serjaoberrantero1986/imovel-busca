@@ -10,6 +10,18 @@ Este repositório **não** conecta ao Web Imóveis, Supabase ou domínio de prod
 6. Exporte somente os anúncios selecionados como CSV; a exportação nova inclui a coluna de tipologia (`type`). CSVs exportados anteriormente, sem essa coluna, continuam aceitos; o tipo só é recuperado quando estiver explicitamente identificável (por exemplo no prefixo de URL do VivaReal).
 O número totalResults do fornecedor representa o total reportado; não significa que todas as páginas já foram carregadas. Os resultados não são persistidos no servidor. A importação CSV aceita somente o formato de exportação do laboratório (até 3 MB / 2.000 anúncios) e ocorre localmente no navegador. **O preço anunciado/m² não é uma avaliação e não equivale a preço de transação.**
 
+## Cadastro livre de imóvel de referência (triagem de semelhança)
+
+A seção **Imóvel de referência** aceita casas, sobrados, apartamentos, kitnets, flats, coberturas, imóveis em condomínio, terrenos, chácaras/sítios/fazendas, salas e pontos comerciais, galpões e a opção **Outro tipo** com descrição livre. O cadastro fica **apenas na memória da aba atual**; não grava no banco, não muda anúncios do SaaS principal e não demanda a GeckoAPI.
+
+1. Preencha tipo, município e UF. Identificação, bairro e demais atributos são opcionais. Para uma comparação de metragem efetiva, informe **área total de terreno** para terrenos e imóveis rurais e **área útil/privativa** para os demais; área construída é guardada separadamente e **não substitui área útil**. A triagem de um imóvel sem essa área de referência fica incompleta.
+2. Opcionalmente informe dormitórios, suítes, banheiros, vagas, tolerância de área (5% a 50%; sugestão inicial da interface: **±20%**) e, somente se conhecidas, latitude/longitude. Um raio geográfico requer **ambas** as coordenadas; nenhum ponto ou localização é inventado.
+3. Clique **Salvar imóvel de referência**. A lista e o comparador passam a classificar cada anúncio em quatro categorias: **aderente nos critérios conferidos**, **revisar diferenças**, **comparação incompleta** e **fora do recorte**. Município/UF ou tipologia verificadamente diferentes ficam fora do recorte; falta de cidade, tipo, preço pedido ou da área de referência impede conclusão de aderência.
+4. Filtre pelos estados de triagem ou ordene os resultados pela aderência. Anúncios não são removidos automaticamente: mesmo um anúncio fora do recorte continua selecionável para auditoria. O relatório comparativo exibe alertas e o CSV acrescenta os dados e motivos da classificação vigente.
+5. O indicador usa **regras heurísticas explícitas e revisáveis**, e não oferece pontuação financeira, avaliação automática, valor de mercado nem PTAM. Não há homologação da semelhança, estado de conservação, qualidade dos dados, natureza da oferta (venda/locação), negociação, documentação ou licenças do fornecedor. Imóveis de **tipologia personalizada** exigem validação humana.
+
+O marcador **R** só aparece quando as coordenadas de referência foram informadas pelo usuário; o círculo e centro visual do mapa continuam independentes. Ao limpar apenas a referência, os anúncios e a seleção são preservados. O CSV registra a referência da **sessão no momento da exportação**, mas importar o CSV não recria automaticamente o cadastro, evitando assumir que a referência histórica ainda é válida.
+
 ## Versão 0.2 — escolha de portais e comparador
 Aba **Consultar GeckoAPI**:
 1. Selecione **Buscar lista (PLP)**.
