@@ -1670,17 +1670,20 @@ async function fetchDetails(p,button){
     // A PDP de alguns portais retorna outro ID; o anúncio original é associado pela URL.
     const idx=records.findIndex(item=>item.key===p.key);
     if(idx<0)throw new Error('Anúncio original não encontrado no comparador.');
-    const merged={...p};
+    // Entre o clique e a resposta assíncrona o operador pode ter conferido
+    // dados: aplicar detalhes sobre a versão MAIS RECENTE da sessão.
+    const current=records[idx];
+    const merged={...current};
     for(const [key,val] of Object.entries(detail)) {
       if(['id','key','source','link'].includes(key))continue;
       if(val===null||val===undefined||val==='—'||(Array.isArray(val)&&!val.length))continue;
       if(key==='type'&&val==='unknown')continue;
       if(['reviewHistory','manualOverrides','providerSnapshot','reviewImported','providerConflicts'].includes(key))
         continue;
-      if(p.manualOverrides?.[key]){
-        if(val!==p[key])
+      if(current.manualOverrides?.[key]){
+        if(val!==current[key])
           merged.providerConflicts={...(merged.providerConflicts||{}),
-            [key]:{providerValue:val,reviewedValue:p[key]}};
+            [key]:{providerValue:val,reviewedValue:current[key]}};
         continue;
       }
       merged[key]=val;
