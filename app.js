@@ -124,8 +124,41 @@ if (hasMap) {
   layer = L.layerGroup().addTo(map);
   setTimeout(() => map.invalidateSize(),200);
 } else {report('Não foi possível carregar o mapa. Confira a conexão e tente novamente.',true);}
+function reviewComparable(p) {
+  const missing=[],warnings=[];
+  if(p.price===null||!Number.isFinite(p.price)||p.price<=0)missing.push('Preço pedido não informado ou inválido');
+  if(p.type==='unknown')missing.push('Tipo de imóvel não identificado');
+  const area=p.type==='land'?p.total:p.usable;
+  if(area===null||!Number.isFinite(area)||area<=0)
+    missing.push(p.type==='land'?'Área do terreno ausente':'Área útil não informada');
+  if(!p.city||p.city==='—'||!uf(p.state))missing.push('Município ou UF não confirmados');
+  if(!p.link)warnings.push('Sem link público para conferência');
+  if(!p.neighborhood||p.neighborhood==='—')warnings.push('Bairro não informado');
+  if(!validPoint(p))warnings.push('Sem coordenadas para localizar no mapa');
+  else if(p.approx)warnings.push('Localização aproximada');
+  if(p.usable!==null&&p.total!==null&&p.usable>p.total)
+    warnings.push('Área útil maior que a total: verificar as definições');
+  if(['house','apartment','farm','penthouse'].includes(p.type)&&p.beds===null)
+    warnings.push('Número de dormitórios não informado');
+  return {
+    status:missing.length?'insufficient':warnings.length?'review':'complete',
+    issues:[...missing,...warnings],
+    unitPrice:p.price>0&&area>0?p.price/area:null,
+    unitAreaLabel:p.type==='land'?'m² de terreno':'m² úteis'
+  };
+}
+const qualityLabels={complete:'Dados essenciais completos',review:'Requer conferência',insufficient:'Dados insuficientes'};
 function duplicate(p) {
-  return records.some(q => q.key !== p.key && p.price !== null && q.price === p.price && p.usable !== null && q.usable === p.usable && p.neighborhood !== '—' && q.neighborhood.toLowerCase() === p.neighborhood.toLowerCase());
+  if(p.type==='unknown'||!p.price||!p.usable||!p.city||!uf(p.state)||!p.neighborhood||p.neighborhood==='—')return false;
+  return records.some(q => {
+    if(q.key===p.key||q.type!==p.type||!q.price||!q.usable)return false;
+    if(canon(q.city)!==canon(p.city)||uf(q.state)!==uf(p.state))return false;
+    if(canon(q.neighborhood)!==canon(p.neighborhood)||p.neighborhood==='—')return false;
+    if(q.beds!==null&&p.beds!==null&&q.beds!==p.beds)return false;
+    const priceDiff=Math.abs(q.price-p.price)/Math.max(q.price,p.price);
+    const areaDiff=Math.abs(q.usable-p.usable)/Math.max(q.usable,p.usable);
+    return priceDiff<=0.02&&areaDiff<=0.03;
+  });
 }
 const valueOf = id => {const v=$(id).value.trim();return v===''?null:Number(v);};
 function visibleRecords(){
@@ -135,9 +168,11 @@ function visibleRecords(){
   const aMin=valueOf('filter-area-min'),aMax=valueOf('filter-area-max');
   const minBaths=valueOf('filter-bathrooms-min'),minSpaces=valueOf('filter-parking-min');
   const onlyRadius=$('in-radius').checked,km=Number($('radius').value);
+  const qualityFilter=$('quality-filter').value;
   return records.filter(p=>{
     if(activeLocation&&(canon(p.city)!==activeLocation.city||canon(p.state)!==activeLocation.state))return false;
     if(type&&p.type!==type)return false;
+    if(qualityFilter&&reviewComparable(p).status!==qualityFilter)return false;
     if(neigh&&!canon(p.neighborhood).includes(neigh))return false;
     if(minBeds&&(p.beds===null||p.beds<minBeds))return false;
     if(minBaths!==null&&(p.baths===null||p.baths<minBaths))return false;
@@ -183,9 +218,13 @@ function renderCards() {
   for (const p of visible) {
     const card=document.createElement('article'); card.className='listing'+(selected.has(p.key)?' selected':'');
     const dis=distance(center,p), flag=$('dedupe').checked&&duplicate(p);
+    const review=reviewComparable(p);
+    const reviewClass=review.status==='complete'?'quality-ok':review.status==='review'?'quality-warn':'quality-missing';
     card.innerHTML =
       '<div class="row between"><span class="pill">'+safe(p.source)+'</span><span class="muted">'+(validPoint(p)?(p.approx?'📍 Aproximada':'📍 Não certificada'):'Sem coordenadas')+'</span></div>'+
-      '<h3>'+safe(p.title)+'</h3><div class="row"><span class="pill orange">'+safe(typeLabel[p.type]||'A classificar')+'</span></div><div class="price">'+safe(money(p.price))+'</div>'+
+      '<h3>'+safe(p.title)+'</h3><div class="row"><span class="pill orange">'+safe(typeLabel[p.type]||'A classificar')+'</span><span class="pill '+reviewClass+'">'+safe(qualityLabels[review.status])+'</span></div><div class="price">'+safe(money(p.price))+'</div>'+
+      (review.unitPrice!==null?'<div class="muted">'+safe(money(review.unitPrice))+' / '+safe(review.unitAreaLabel)+' (preço pedido)</div>':'')+
+      (review.issues.length?'<div class="quality-reasons">'+review.issues.map(x=>'<span>'+safe(x)+'</span>').join('')+'</div>':'')+
       '<div class="row"><span class="pill">'+safe(text(p.usable))+' m² úteis</span><span class="pill">'+safe(text(p.beds))+' dorm.</span><span class="pill">'+safe(text(p.suites))+' suítes</span><span class="pill">'+safe(text(p.baths))+' banh.</span><span class="pill">'+safe(text(p.spaces))+' vagas</span></div>'+
       '<div class="muted">'+safe(p.neighborhood)+' · '+safe(p.city)+(dis!==null?' · '+dis.toFixed(1)+' km do centro':'')+'</div>'+
       (flag?'<span class="pill orange">Possível duplicidade — revisar</span>':'')+
@@ -198,15 +237,27 @@ function renderCards() {
     box.appendChild(card);
   }
   $('loaded').textContent=records.length;$('total').textContent=reported??'—';$('mapped').textContent=records.filter(validPoint).length;$('picked').textContent=selected.size;
+  $('complete').textContent=records.filter(p=>reviewComparable(p).status==='complete').length;
+  $('needs-review').textContent=records.filter(p=>reviewComparable(p).status!=='complete').length;
   renderMarkers();
 }
 function renderComparison() {
   const arr=records.filter(p=>selected.has(p.key)), container=$('comparison');$('export-btn').disabled=arr.length<2;
   if(!arr.length){container.textContent='Selecione os anúncios na lista para comparar suas características.';return;}
-  const attrs=[['Fonte','source'],['Tipo de imóvel','type'],['Preço pedido','price'],['Área útil','usable'],['Área total','total'],['Dormitórios','beds'],['Suítes','suites'],['Banheiros','baths'],['Vagas','spaces'],['Pavimentos','floors'],['Bairro','neighborhood'],['Anunciante','advertiser'],['Comodidades','amenities']];
+  const attrs=[['Fonte','source'],['Tipo de imóvel','type'],['Triagem dos dados','quality'],['Preço pedido','price'],['R$/m² da área de referência','unitPrice'],['Área útil','usable'],['Área total','total'],['Dormitórios','beds'],['Suítes','suites'],['Banheiros','baths'],['Vagas','spaces'],['Pavimentos','floors'],['Bairro','neighborhood'],['Anunciante','advertiser'],['Comodidades','amenities']];
   let html='<table><thead><tr><th>Característica</th>'+arr.map(p=>'<th>'+safe(p.title.slice(0,70))+'</th>').join('')+'</tr></thead><tbody>';
-  for (const [label,key] of attrs) html+='<tr><th>'+safe(label)+'</th>'+arr.map(p=>'<td>'+safe(key==='price'?money(p.price):key==='type'?(typeLabel[p.type]||'A classificar'):key==='amenities'?(p.amenities.join(', ')||'—'):text(p[key]))+'</td>').join('')+'</tr>';
-  container.innerHTML=html+'</tbody></table>';
+  for (const [label,key] of attrs) html+='<tr><th>'+safe(label)+'</th>'+arr.map(p=>'<td>'+safe(key==='quality'?qualityLabels[reviewComparable(p).status]:key==='unitPrice'?(reviewComparable(p).unitPrice===null?'—':money(reviewComparable(p).unitPrice)+' / '+reviewComparable(p).unitAreaLabel):key==='price'?money(p.price):key==='type'?(typeLabel[p.type]||'A classificar'):key==='amenities'?(p.amenities.join(', ')||'—'):text(p[key]))+'</td>').join('')+'</tr>';
+  const locations=new Set(arr.map(p=>canon(p.city)+'/'+canon(uf(p.state))));
+  const types=new Set(arr.map(p=>p.type));
+  const cautions=[];
+  if(arr.some(p=>reviewComparable(p).status==='insufficient'))cautions.push('Há anúncios sem dados essenciais.');
+  if(arr.some(p=>reviewComparable(p).status==='review'))cautions.push('Há atributos que precisam ser conferidos.');
+  if(locations.size>1)cautions.push('A seleção contém municípios diferentes.');
+  if(types.size>1)cautions.push('A seleção mistura tipos de imóvel.');
+  if(arr.some(p=>duplicate(p)))cautions.push('Há possíveis duplicidades na sessão.');
+  container.innerHTML=html+'</tbody></table>'+
+    '<p class="hint">Triagem preliminar: '+safe(cautions.join(' ')||'Campos essenciais presentes; confirme os anúncios, localização e homogeneidade.')+
+    ' Preços anunciados não representam preços efetivos de venda. Nenhuma avaliação ou PTAM é calculado.</p>';
 }
 function refresh(){renderCards();renderComparison();}
 function load(input) {
@@ -431,7 +482,7 @@ async function fetchDetails(p,button){
   finally{button.disabled=false;}
 }
 $('radius').oninput=()=>{$('radius-label').textContent=$('radius').value+' km';if(ring)ring.setRadius(Number($('radius').value)*1000);refresh();};
-for(const id of ['in-radius','min-beds','dedupe','result-type','filter-neighborhood','filter-price-min','filter-price-max','filter-area-min','filter-area-max','filter-bathrooms-min','filter-parking-min']){
+for(const id of ['in-radius','min-beds','dedupe','result-type','quality-filter','filter-neighborhood','filter-price-min','filter-price-max','filter-area-min','filter-area-max','filter-bathrooms-min','filter-parking-min']){
   $(id).addEventListener('input',refresh);
   $(id).addEventListener('change',refresh);
 }
