@@ -112,3 +112,19 @@ Copiar esta mensagem para uma nova conversa do ChatGPT ou Codex:
 > Quero continuar o projeto **Imóvel Busca / Avaliação Inteligente do Web Imóveis**. Leia primeiro o arquivo `docs/CONTEXTO_DE_CONTINUIDADE.md` no repositório GitHub `serjaoberrantero1986/imovel-busca`, verifique o último commit, o CI e o deploy Vercel, e consulte `COMO_USAR.md`. O Web Imóveis fica em `serjaoberrantero1986/imovel-hub`, com regras em `AGENTS.md`; **não o altere** sem autorização. Diga o que está implementado e continue do ponto atual, priorizando a qualidade dos resultados reais da OLX/GeckoAPI.
 
 O histórico de mensagens do ChatGPT pode ser útil, mas **este documento versionado e os arquivos reais dos repositórios são a referência durável**. Atualizar o documento ao concluir mudanças relevantes.
+
+## 8. Rodada de triagem e reimportação — 2026-10-19
+
+Nova etapa desenvolvida exclusivamente no repositório `imovel-busca`, na branch `feat/triagem-comparaveis-csv-20261019`, em PR de validação: https://github.com/serjaoberrantero1986/imovel-busca/pull/1
+
+- Entradas: JSON PLP/PDP e importação local de CSV no formato exportado pelo próprio laboratório, inclusive versão antiga sem coluna `type`. Arquivos ficam no navegador (sem novo uso da GeckoAPI); limite atual de 3 MB e 2.000 anúncios por arquivo.
+- A exportação CSV passa a conter `type` e protege textos contra injeção de fórmulas em planilhas.
+- Tipologia estruturada da fonte tem prioridade sobre textos de bairro, para não interpretar `Casa em Chácaras Parque Pirapora` como propriedade rural. Em CSV legado, o prefixo explícito de URLs do VivaReal pode recuperar a tipologia, sem presumir outros atributos.
+- Cada anúncio recebe triagem por integridade: `complete` (dados essenciais presentes), `review` (precisa de conferência) ou `insufficient` (faltam dados essenciais). **Não é verificação de autenticidade nem aprovação de comparável**.
+- Preço pedido/m² é puramente descritivo; terreno usa área total, imóveis edificados usam área útil. Não existe estimativa automática de mercado/PTAM.
+- Duplicidades potenciais exigem cidade, UF, bairro, tipologia e preço/área suficientemente próximos, com dormitórios coerentes quando informados. A detecção apenas sinaliza; não elimina anúncios.
+- Comparador mostra advertências sobre dados insuficientes, diferentes municípios e tipos misturados.
+- Amostra real de referência: CSV de quatro anúncios VivaReal em Salto de Pirapora/SP, com um imóvel sem coordenadas e alguns títulos genéricos no formato anterior. Esses resultados **não** compõem amostra validada para precificação.
+- Nenhum arquivo em `imovel-hub` foi modificado e nenhuma consulta autenticada adicional à GeckoAPI foi feita.
+
+**Próximas tarefas**: confirmar testes da PR e publicação Vercel; validar manualmente importação do CSV real no navegador; confirmar com o usuário o recorte de tipologia, região, atributos e imóvel avaliado antes de construir indicadores estatísticos, metodologia e futuras integrações no SaaS principal. Não declarar avaliações reais sem validação técnica.

@@ -2,19 +2,20 @@
 Este repositório **não** conecta ao Web Imóveis, Supabase ou domínio de produção. Não contém anúncios fictícios e não calcula valor de mercado/PTAM.
 
 ## O que funciona sem chave
-1. Acesse o site publicado e escolha **Importar JSON**.
-2. Cole o resultado PLP fornecido pela GeckoAPI (data.items).
-3. Visualize no mapa os anúncios que tenham coordenadas, com aviso quando a localização for aproximada.
-4. Arraste o marcador central para deslocar o raio, altere seu tamanho, filtre anúncios e selecione 2 ou mais para comparação.
-5. Exporte somente os anúncios selecionados como CSV.
-O número totalResults do fornecedor representa o total reportado; não significa que todas as páginas já foram carregadas. Os resultados não são persistidos no servidor.
+1. Abra **Importar JSON** e cole o resultado PLP/PDP fornecido pela GeckoAPI **ou** selecione um CSV anteriormente exportado pelo Imóvel Busca e clique **Importar CSV**. Nenhuma das duas ações consome créditos.
+2. Observe a triagem dos anúncios: **dados essenciais completos**, **requer conferência** ou **dados insuficientes**. A triagem verifica presença/coerência de campos, não comprova origem, veracidade ou homogeneidade.
+3. Veja no mapa somente os anúncios com coordenadas; posição aproximada é sinalizada. Anúncios sem coordenadas continuam na lista.
+4. Ajuste o centro e raio do mapa, filtros de atributos e **triagem dos dados**. A indicação de possíveis duplicidades é informativa, não remove anúncios.
+5. Selecione 2 ou mais anúncios para comparar. A tabela mostra preço pedido, preço pedido/m² da área de referência e advertências quando existem dados insuficientes, cidades ou tipologias misturadas.
+6. Exporte somente os anúncios selecionados como CSV; a exportação nova inclui a coluna de tipologia (`type`). CSVs exportados anteriormente, sem essa coluna, continuam aceitos; o tipo só é recuperado quando estiver explicitamente identificável (por exemplo no prefixo de URL do VivaReal).
+O número totalResults do fornecedor representa o total reportado; não significa que todas as páginas já foram carregadas. Os resultados não são persistidos no servidor. A importação CSV aceita somente o formato de exportação do laboratório (até 3 MB / 2.000 anúncios) e ocorre localmente no navegador. **O preço anunciado/m² não é uma avaliação e não equivale a preço de transação.**
 
 ## Versão 0.2 — escolha de portais e comparador
 Aba **Consultar GeckoAPI**:
 1. Selecione **Buscar lista (PLP)**.
 2. Em **Portal**, escolha **ZAP Imóveis, OLX, VivaReal, Chaves na Mão ou Imovelweb**.
 3. Para ZAP, VivaReal e Chaves na Mão, informe cidade/UF e opcionalmente tipo, bairro, preço, área útil e uma busca por coordenadas. O servidor transmite os filtros estruturados suportados. Na busca por coordenadas, a GeckoAPI usa **2 km fixos** — não confunda com o raio visual de 1–50 km.
-4. Para OLX, informe cidade/UF, escolha **Casa** (ou outro tipo), e consulte. O servidor usa a categoria **Imóveis** e busca textual, sem afirmar que a OLX suporta filtro estruturado de tipologia ou coordenadas. Se quiser reproduzir os filtros do próprio portal, cole uma URL de resultado da OLX no campo correspondente; a URL terá prioridade.
+4. Para OLX, informe cidade/UF, escolha **Casa** (ou outro tipo), e consulte. O servidor usa categoria e busca textual; para **casas à venda** utiliza o caminho OLX observado em testes. Isso não garante que a fonte respeitou município ou tipologia, que precisam ser auditados na resposta. Se quiser reproduzir os filtros do próprio portal, cole uma URL de resultado da OLX no campo correspondente; a URL terá prioridade.
 5. Para Imovelweb, forneça URL HTTPS de uma **página de resultados** do Imovelweb; a API não recebe filtros estruturados nessa modalidade.
 6. Clique **Consultar API** e confirme o consumo de créditos. Páginas seguintes podem ser buscadas ajustando o número da página.
 7. Filtre a lista pela tipologia identificada, bairro, preço, área útil, dormitórios, banheiros e vagas. Marcadores acompanham o filtro local. Imóveis sem coordenadas continuam na lista, não recebem um pino inventado.
@@ -39,7 +40,9 @@ Para testar: abra Consultar GeckoAPI, preencha cidade e UF (PLP) ou URL (PDP), i
 - O site pode ser acessível publicamente dependendo das proteções configuradas na Vercel. Não insira dados confidenciais nas caixas de importação.
 - O navegador consulta tiles do OpenStreetMap. Para produção comercial e alto tráfego é necessário provedor de mapas apropriado.
 - usableAreas e totalAreas são separados; campo ausente nunca é convertido automaticamente em metragem presumida.
-- Não certifica coordenadas nem deduplica automaticamente anúncios de fontes diferentes. Apenas sinaliza coincidências fortes quando o filtro de duplicidades está ligado.
+- Não certifica coordenadas nem deduplica automaticamente anúncios de fontes diferentes. Apenas sinaliza possíveis coincidências por município, UF, bairro, tipologia, valor e área próximos; a decisão de excluir duplicados é humana.
+- Dados essenciais completos **não significam comparável aprovado**. A classificação não prova homogeneidade, conservação, documentação ou validade dos anúncios; informações ausentes nunca são inferidas de outras metragens.
+- A saída CSV protege campos textuais contra fórmulas ao abrir em planilhas; trate os dados importados como não confiáveis.
 - Os portais podem fornecer informações incompletas ou variar o esquema; testar cobertura e revisar cada amostra.
 - Consultas podem consumir créditos; este software não controla saldo nem orçamento persistente.
 - O código de integração não concede licença para republicar conteúdo de portais. Validar autorizações e contrato B2B antes de qualquer uso comercial.

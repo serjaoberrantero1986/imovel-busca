@@ -11,18 +11,55 @@ let activeLocation = null;
 function canon(value){return String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
 function classify(item) {
   const units=(Array.isArray(item.unitTypes)?item.unitTypes:[]).map(canon);
-  const raw=canon([item.realtyType?.name,item.property?.type,item.category,item.propertyType,item.typeLabel,item.title].filter(Boolean).join(' '));
   const match=words=>units.some(u=>words.some(w=>u.includes(w)));
-  if(match(['allotment','land','lot'])||/\b(terreno|terrenos|lote|lotes)\b/.test(raw))return 'land';
-  if(match(['farm','rural'])||/\b(chacara|chacaras|sitio|sitios|fazenda|fazendas)\b/.test(raw))return 'farm';
-  if(match(['penthouse'])||/\b(cobertura|coberturas)\b/.test(raw))return 'penthouse';
-  if(match(['warehouse'])||/\b(galpao|galpoes)\b/.test(raw))return 'warehouse';
-  if(match(['commercial_room'])||/\b(sala comercial|salas comerciais)\b/.test(raw))return 'commercial_room';
-  if(match(['apartment','flat','kitnet'])||/\b(apartamento|apartamentos|studio|kitnet)\b/.test(raw))return 'apartment';
-  if(match(['home','house'])||/\b(casa|casas|sobrado|sobrados)\b/.test(raw))return 'house';
-  return 'unknown';
+  // Tipos estruturados têm prioridade sobre títulos que possam mencionar bairros
+  // com palavras como "Chácaras" ou "Jardim dos Terrenos".
+  if(match(['allotment','land','lot']))return 'land';
+  if(match(['farm','rural']))return 'farm';
+  if(match(['penthouse']))return 'penthouse';
+  if(match(['warehouse']))return 'warehouse';
+  if(match(['commercial_room']))return 'commercial_room';
+  if(match(['apartment','flat','kitnet']))return 'apartment';
+  if(match(['home','house']))return 'house';
+  const identify=raw=>{
+    if(!raw)return 'unknown';
+    if(/^(casa|casas|sobrado|sobrados)\b/.test(raw))return 'house';
+    if(/^(apartamento|apartamentos|studio|kitnet|flat)\b/.test(raw))return 'apartment';
+    if(/^(terreno|terrenos|lote|lotes)\b/.test(raw))return 'land';
+    if(/^(chacara|chacaras|sitio|sitios|fazenda|fazendas)\b/.test(raw))return 'farm';
+    if(/^(cobertura|coberturas)\b/.test(raw))return 'penthouse';
+    if(/\b(terreno|terrenos|lote|lotes)\b/.test(raw))return 'land';
+    if(/\b(chacara|chacaras|sitio|sitios|fazenda|fazendas)\b/.test(raw))return 'farm';
+    if(/\b(cobertura|coberturas)\b/.test(raw))return 'penthouse';
+    if(/\b(galpao|galpoes)\b/.test(raw))return 'warehouse';
+    if(/\b(sala comercial|salas comerciais)\b/.test(raw))return 'commercial_room';
+    if(/\b(apartamento|apartamentos|studio|kitnet)\b/.test(raw))return 'apartment';
+    if(/\b(casa|casas|sobrado|sobrados)\b/.test(raw))return 'house';
+    return 'unknown';
+  };
+  const structured=identify(canon([item.realtyType?.name,item.property?.type,item.propertyType,item.typeLabel].filter(Boolean).join(' ')));
+  if(structured!=='unknown')return structured;
+  // O CSV exportado não tinha coluna de tipo. Quando o próprio link VivaReal
+  // informa explicitamente a tipologia, aproveitamos somente esse prefixo.
+  const link=url(item.url||item.link||item.listingUrl);
+  if(link) {
+    const parsed=new URL(link);
+    if(/(^|\.)vivareal\.com\.br$/.test(parsed.hostname)) {
+      const slug=parsed.pathname.match(/\/imovel\/(casa|sobrado|apartamento|terreno|lote|chacara|sitio|cobertura|galpao|kitnet|flat)(?:-|\/|$)/i)?.[1];
+      if(slug) {
+        const fromLink=identify(canon(slug));
+        if(fromLink!=='unknown')return fromLink;
+      }
+    }
+  }
+  return identify(canon([item.category,item.title].filter(Boolean).join(' ')));
 }
 const typeLabel={house:'Casa',apartment:'Apartamento',land:'Terreno',farm:'Chácara/sítio',penthouse:'Cobertura',warehouse:'Galpão',commercial_room:'Sala comercial',unknown:'A classificar'};
+function bestTitle(item,type,address) {
+  const provided=[item.title,item.generatedTitle,item.name,item.metaTitle].find(v=>
+    typeof v==='string'&&v.trim()&&canon(v)!=='imovel sem titulo');
+  return provided?.trim()||[typeLabel[type]||'Imóvel',address.neighborhood||item.neighborhood].filter(Boolean).join(' • ');
+}
 function propValue(item,keys) {
   const all=[...(Array.isArray(item.properties)?item.properties:[]),...(Array.isArray(item.attributes)?item.attributes:[])];
   const matched=all.find(p=>keys.some(t=>canon([p.name,p.label].join(' ')).includes(canon(t))));
@@ -37,9 +74,11 @@ function normalized(item,source) {
   const attr=(!Array.isArray(item.attributes)&&item.attributes)||{};
   const prices=Array.isArray(item.prices)?item.prices.find(p=>p.businessType==='SALE')||item.prices[0]||{}:item.prices||{};
   const area=item.area||{},counts=item.counts||{};
-  const address=item.address||item.location||{},geo=item.coordinates||address.coordinates||{};
-  const lat=number(address.latitude??geo.latitude??item.latitude);
-  const lng=number(address.longitude??geo.longitude??item.longitude);
+  const address=item.address&&typeof item.address==='object'?item.address:{};
+  const location=item.location&&typeof item.location==='object'?item.location:{};
+  const geo=item.coordinates||address.coordinates||location.coordinates||{};
+  const lat=number(address.latitude??location.latitude??geo.latitude??item.latitude);
+  const lng=number(address.longitude??location.longitude??geo.longitude??item.longitude);
   const valid=lat!==null&&lng!==null&&Math.abs(lat)<=90&&Math.abs(lng)<=180&&(lat!==0||lng!==0);
   const id=text(item.id||item.listingId||item.externalId||item.listingExternalId||item.adId||item.url);
   const take=(key,fallback)=>number(first(attr[key])??fallback);
@@ -47,7 +86,7 @@ function normalized(item,source) {
   const type=classify(item);
   return {
     id,key:source+':'+id,source,type,
-    title:text(item.title||item.generatedTitle||item.name||item.metaTitle||([typeLabel[type]||'Imóvel',address.neighborhood||item.neighborhood].filter(Boolean).join(' • '))),
+    title:bestTitle(item,type,{neighborhood:address.neighborhood||location.neighborhood}),
     link:url(item.url||item.listingUrl),
     price:number(prices.mainValue??prices.value??prices.rawPrice??prices.price??item.askingPrice??item.price?.amount??item.price),
     usable:take('usableAreas',area.useful??item.property?.usableArea??item.usableArea??propValue(item,['area util','area privativa'])),
@@ -57,10 +96,11 @@ function normalized(item,source) {
     baths:take('bathrooms',count('bathrooms',item.property?.bathrooms??item.bathrooms??propValue(item,['banheiros']))),
     spaces:take('parkingSpaces',count('garages',item.property?.parkingSpaces??item.parkingSpaces??propValue(item,['vagas','garagem']))),
     floors:take('floors',item.floors),
-    neighborhood:text(address.neighborhood||item.neighborhood),
-    city:text(address.city||item.city),state:uf(address.stateAcronym||address.stateCode||address.state||item.stateCode||item.state)||text(address.stateCode||address.state||item.stateCode||item.state),
+    neighborhood:text(address.neighborhood||location.neighborhood||item.neighborhood),
+    city:text(address.city||location.city||item.city),
+    state:uf(address.stateAcronym||address.stateCode||address.state||location.stateAcronym||location.stateCode||location.state||item.stateCode||item.state)||text(address.stateCode||address.state||location.stateCode||location.state||item.stateCode||item.state),
     lat:valid?lat:null,lng:valid?lng:null,
-    approx:address.isApproximateLocation===true||address.approximate===true||address.publicAddress===false,
+    approx:address.isApproximateLocation===true||address.approximate===true||address.publicAddress===false||location.isApproximateLocation===true||location.approximate===true||location.publicAddress===false,
     amenities:Array.isArray(item.amenities)?item.amenities:Array.isArray(item.privativeAmenities)?item.privativeAmenities:[],
     advertiser:text(item.advertiser?.name||item.publisher?.name),description:text(item.description),
     detailed:false
@@ -87,8 +127,43 @@ if (hasMap) {
   layer = L.layerGroup().addTo(map);
   setTimeout(() => map.invalidateSize(),200);
 } else {report('Não foi possível carregar o mapa. Confira a conexão e tente novamente.',true);}
+function reviewComparable(p) {
+  const missing=[],warnings=[];
+  if(p.price===null||!Number.isFinite(p.price)||p.price<=0)missing.push('Preço pedido não informado ou inválido');
+  if(p.type==='unknown')missing.push('Tipo de imóvel não identificado');
+  const area=p.type==='land'?p.total:p.usable;
+  if(area===null||!Number.isFinite(area)||area<=0)
+    missing.push(p.type==='land'?'Área do terreno ausente':'Área útil não informada');
+  if(!p.city||p.city==='—'||!uf(p.state))missing.push('Município ou UF não confirmados');
+  if(!p.link)warnings.push('Sem link público para conferência');
+  if(!p.neighborhood||p.neighborhood==='—')warnings.push('Bairro não informado');
+  if(!validPoint(p))warnings.push('Sem coordenadas para localizar no mapa');
+  else if(p.approx)warnings.push('Localização aproximada');
+  if(p.usable!==null&&p.total!==null&&p.usable>p.total)
+    warnings.push('Área útil maior que a total: verificar as definições');
+  if(['house','apartment','farm','penthouse'].includes(p.type)&&p.beds===null)
+    warnings.push('Número de dormitórios não informado');
+  return {
+    status:missing.length?'insufficient':warnings.length?'review':'complete',
+    issues:[...missing,...warnings],
+    unitPrice:p.price>0&&area>0?p.price/area:null,
+    unitAreaLabel:p.type==='land'?'m² de terreno':'m² úteis'
+  };
+}
+const qualityLabels={complete:'Dados essenciais completos',review:'Requer conferência',insufficient:'Dados insuficientes'};
 function duplicate(p) {
-  return records.some(q => q.key !== p.key && p.price !== null && q.price === p.price && p.usable !== null && q.usable === p.usable && p.neighborhood !== '—' && q.neighborhood.toLowerCase() === p.neighborhood.toLowerCase());
+  const area=p.type==='land'?p.total:p.usable;
+  if(p.type==='unknown'||!p.price||!area||!p.city||!uf(p.state)||!p.neighborhood||p.neighborhood==='—')return false;
+  return records.some(q => {
+    const comparedArea=q.type==='land'?q.total:q.usable;
+    if(q.key===p.key||q.type!==p.type||!q.price||!comparedArea)return false;
+    if(canon(q.city)!==canon(p.city)||uf(q.state)!==uf(p.state))return false;
+    if(canon(q.neighborhood)!==canon(p.neighborhood)||p.neighborhood==='—')return false;
+    if(q.beds!==null&&p.beds!==null&&q.beds!==p.beds)return false;
+    const priceDiff=Math.abs(q.price-p.price)/Math.max(q.price,p.price);
+    const areaDiff=Math.abs(comparedArea-area)/Math.max(comparedArea,area);
+    return priceDiff<=0.02&&areaDiff<=0.03;
+  });
 }
 const valueOf = id => {const v=$(id).value.trim();return v===''?null:Number(v);};
 function visibleRecords(){
@@ -98,9 +173,11 @@ function visibleRecords(){
   const aMin=valueOf('filter-area-min'),aMax=valueOf('filter-area-max');
   const minBaths=valueOf('filter-bathrooms-min'),minSpaces=valueOf('filter-parking-min');
   const onlyRadius=$('in-radius').checked,km=Number($('radius').value);
+  const qualityFilter=$('quality-filter').value;
   return records.filter(p=>{
     if(activeLocation&&(canon(p.city)!==activeLocation.city||canon(p.state)!==activeLocation.state))return false;
     if(type&&p.type!==type)return false;
+    if(qualityFilter&&reviewComparable(p).status!==qualityFilter)return false;
     if(neigh&&!canon(p.neighborhood).includes(neigh))return false;
     if(minBeds&&(p.beds===null||p.beds<minBeds))return false;
     if(minBaths!==null&&(p.baths===null||p.baths<minBaths))return false;
@@ -146,9 +223,13 @@ function renderCards() {
   for (const p of visible) {
     const card=document.createElement('article'); card.className='listing'+(selected.has(p.key)?' selected':'');
     const dis=distance(center,p), flag=$('dedupe').checked&&duplicate(p);
+    const review=reviewComparable(p);
+    const reviewClass=review.status==='complete'?'quality-ok':review.status==='review'?'quality-warn':'quality-missing';
     card.innerHTML =
       '<div class="row between"><span class="pill">'+safe(p.source)+'</span><span class="muted">'+(validPoint(p)?(p.approx?'📍 Aproximada':'📍 Não certificada'):'Sem coordenadas')+'</span></div>'+
-      '<h3>'+safe(p.title)+'</h3><div class="row"><span class="pill orange">'+safe(typeLabel[p.type]||'A classificar')+'</span></div><div class="price">'+safe(money(p.price))+'</div>'+
+      '<h3>'+safe(p.title)+'</h3><div class="row"><span class="pill orange">'+safe(typeLabel[p.type]||'A classificar')+'</span><span class="pill '+reviewClass+'">'+safe(qualityLabels[review.status])+'</span></div><div class="price">'+safe(money(p.price))+'</div>'+
+      (review.unitPrice!==null?'<div class="muted">'+safe(money(review.unitPrice))+' / '+safe(review.unitAreaLabel)+' (preço pedido)</div>':'')+
+      (review.issues.length?'<div class="quality-reasons">'+review.issues.map(x=>'<span>'+safe(x)+'</span>').join('')+'</div>':'')+
       '<div class="row"><span class="pill">'+safe(text(p.usable))+' m² úteis</span><span class="pill">'+safe(text(p.beds))+' dorm.</span><span class="pill">'+safe(text(p.suites))+' suítes</span><span class="pill">'+safe(text(p.baths))+' banh.</span><span class="pill">'+safe(text(p.spaces))+' vagas</span></div>'+
       '<div class="muted">'+safe(p.neighborhood)+' · '+safe(p.city)+(dis!==null?' · '+dis.toFixed(1)+' km do centro':'')+'</div>'+
       (flag?'<span class="pill orange">Possível duplicidade — revisar</span>':'')+
@@ -161,20 +242,32 @@ function renderCards() {
     box.appendChild(card);
   }
   $('loaded').textContent=records.length;$('total').textContent=reported??'—';$('mapped').textContent=records.filter(validPoint).length;$('picked').textContent=selected.size;
+  $('complete').textContent=records.filter(p=>reviewComparable(p).status==='complete').length;
+  $('needs-review').textContent=records.filter(p=>reviewComparable(p).status!=='complete').length;
   renderMarkers();
 }
 function renderComparison() {
   const arr=records.filter(p=>selected.has(p.key)), container=$('comparison');$('export-btn').disabled=arr.length<2;
   if(!arr.length){container.textContent='Selecione os anúncios na lista para comparar suas características.';return;}
-  const attrs=[['Fonte','source'],['Tipo de imóvel','type'],['Preço pedido','price'],['Área útil','usable'],['Área total','total'],['Dormitórios','beds'],['Suítes','suites'],['Banheiros','baths'],['Vagas','spaces'],['Pavimentos','floors'],['Bairro','neighborhood'],['Anunciante','advertiser'],['Comodidades','amenities']];
+  const attrs=[['Fonte','source'],['Tipo de imóvel','type'],['Triagem dos dados','quality'],['Preço pedido','price'],['R$/m² da área de referência','unitPrice'],['Área útil','usable'],['Área total','total'],['Dormitórios','beds'],['Suítes','suites'],['Banheiros','baths'],['Vagas','spaces'],['Pavimentos','floors'],['Bairro','neighborhood'],['Anunciante','advertiser'],['Comodidades','amenities']];
   let html='<table><thead><tr><th>Característica</th>'+arr.map(p=>'<th>'+safe(p.title.slice(0,70))+'</th>').join('')+'</tr></thead><tbody>';
-  for (const [label,key] of attrs) html+='<tr><th>'+safe(label)+'</th>'+arr.map(p=>'<td>'+safe(key==='price'?money(p.price):key==='type'?(typeLabel[p.type]||'A classificar'):key==='amenities'?(p.amenities.join(', ')||'—'):text(p[key]))+'</td>').join('')+'</tr>';
-  container.innerHTML=html+'</tbody></table>';
+  for (const [label,key] of attrs) html+='<tr><th>'+safe(label)+'</th>'+arr.map(p=>'<td>'+safe(key==='quality'?qualityLabels[reviewComparable(p).status]:key==='unitPrice'?(reviewComparable(p).unitPrice===null?'—':money(reviewComparable(p).unitPrice)+' / '+reviewComparable(p).unitAreaLabel):key==='price'?money(p.price):key==='type'?(typeLabel[p.type]||'A classificar'):key==='amenities'?(p.amenities.join(', ')||'—'):text(p[key]))+'</td>').join('')+'</tr>';
+  const locations=new Set(arr.map(p=>canon(p.city)+'/'+canon(uf(p.state))));
+  const types=new Set(arr.map(p=>p.type));
+  const cautions=[];
+  if(arr.some(p=>reviewComparable(p).status==='insufficient'))cautions.push('Há anúncios sem dados essenciais.');
+  if(arr.some(p=>reviewComparable(p).status==='review'))cautions.push('Há atributos que precisam ser conferidos.');
+  if(locations.size>1)cautions.push('A seleção contém municípios diferentes.');
+  if(types.size>1)cautions.push('A seleção mistura tipos de imóvel.');
+  if(arr.some(p=>duplicate(p)))cautions.push('Há possíveis duplicidades na sessão.');
+  container.innerHTML=html+'</tbody></table>'+
+    '<p class="hint">Triagem preliminar: '+safe(cautions.join(' ')||'Campos essenciais presentes; confirme os anúncios, localização e homogeneidade.')+
+    ' Preços anunciados não representam preços efetivos de venda. Nenhuma avaliação ou PTAM é calculado.</p>';
 }
 function refresh(){renderCards();renderComparison();}
-function load(input) {
-  const data=payload(input), known=new Map(records.map((x,i)=>[x.key,i]));
-  for (const p of data.items) {
+function loadNormalized(items,total=null,detailed=false){
+  const known=new Map(records.map((x,i)=>[x.key,i]));
+  for (const p of items) {
     const idx=known.get(p.key);
     if(idx!==undefined) {
       const prior=records[idx], update={...prior};
@@ -183,17 +276,83 @@ function load(input) {
         if(key==='type'&&val==='unknown'&&prior.type!=='unknown')continue;
         update[key]=val;
       }
-      if(input?.data?.type==='pdp')update.detailed=true;
+      if(detailed)update.detailed=true;
       records[idx]=update;
     } else {
       known.set(p.key,records.length);
-      records.push({...p,detailed:input?.data?.type==='pdp'});
+      records.push({...p,detailed});
     }
   }
-  if(data.total!==null)reported=data.total;
+  if(total!==null)reported=total;
   drawMap(true);refresh();
-  report('Importação concluída: '+data.items.length+' anúncios nesta consulta e '+records.length+' únicos por ID/fonte na sessão. Dados sujeitos a revisão.');
+  report('Importação concluída: '+items.length+' anúncios nesta consulta e '+records.length+' únicos por ID/fonte na sessão. Dados sujeitos a revisão.');
 }
+function load(input){
+  const data=payload(input);
+  loadNormalized(data.items,data.total,input?.data?.type==='pdp');
+}
+// Lê exclusivamente o formato CSV de exportação do laboratório, inclusive arquivos
+// antigos sem a coluna "type". Arquivos ficam no navegador, sem upload ao servidor.
+function parseExportCsv(raw){
+  if(typeof raw!=='string'||raw.length>3000000)throw Error('CSV inválido ou maior que 3 MB.');
+  const rows=[],row=[];let field='',quoted=false;
+  const cell=()=>{row.push(field);field='';};
+  const line=()=>{cell();if(row.some(value=>value.trim()!==''))rows.push([...row]);row.length=0;};
+  const content=raw.replace(/^\uFEFF/,'');
+  for(let i=0;i<content.length;i++){
+    const char=content[i];
+    if(char==='"'){
+      if(quoted&&content[i+1]==='"'){field+='"';i++;}
+      else quoted=!quoted;
+    }else if(char===';'&&!quoted){cell();}
+    else if((char==='\r'||char==='\n')&&!quoted){
+      if(char==='\r'&&content[i+1]==='\n')i++;
+      line();
+    }else field+=char;
+  }
+  if(quoted)throw Error('CSV contém campo com aspas não fechado.');
+  if(field||row.length)line();
+  if(!rows.length)throw Error('CSV vazio.');
+  const headers=rows.shift().map(v=>v.trim());
+  const required=['source','id','price','usable','total','city','state','link'];
+  if(required.some(key=>!headers.includes(key)))throw Error('Formato CSV incompatível com a exportação do Imóvel Busca.');
+  if(!rows.length)throw Error('CSV sem anúncios.');
+  if(rows.length>2000)throw Error('CSV com mais de 2.000 anúncios: divida o arquivo em partes.');
+  return rows.map((values,i)=>{
+    if(values.length!==headers.length)throw Error('CSV: número de colunas incorreto na linha '+(i+2)+'.');
+    const row=Object.fromEntries(headers.map((key,index)=>[key,values[index]]));
+    const id=row.id.trim(),source=row.source.trim().toLowerCase();
+    if(!source||(!id&&!row.link))throw Error('CSV: anúncio sem identificação na linha '+(i+2)+'.');
+    const link=url(row.link);
+    const type=Object.hasOwn(typeLabel,row.type)?row.type:classify({title:row.title,link});
+    const latitude=number(row.lat),longitude=number(row.lng);
+    const valid=latitude!==null&&longitude!==null&&Math.abs(latitude)<=90&&Math.abs(longitude)<=180&&(latitude!==0||longitude!==0);
+    const neighborhood=row.neighborhood?.trim()||'—';
+    const record={
+      source,id:id||link,key:source+':'+(id||link),type,
+      title:bestTitle({title:row.title,neighborhood},type,{neighborhood:neighborhood==='—'?'':neighborhood}),
+      link,price:number(row.price),usable:number(row.usable),total:number(row.total),
+      beds:number(row.beds),suites:number(row.suites),baths:number(row.baths),
+      spaces:number(row.spaces),floors:number(row.floors),
+      neighborhood,city:row.city?.trim()||'—',
+      state:uf(row.state)||row.state?.trim()||'—',
+      lat:valid?latitude:null,lng:valid?longitude:null,approx:row.approx?.trim().toLowerCase()==='true',
+      advertiser:row.advertiser?.trim()||'—',description:'—',amenities:[],detailed:false
+    };
+    return record;
+  });
+}
+$('csv-import-btn').onclick=async()=>{
+  const file=$('csv-file').files?.[0];
+  if(!file){report('Selecione um CSV anteriormente exportado pelo Imóvel Busca.',true);return;}
+  try{
+    const content=await file.text();
+    const imported=parseExportCsv(content);
+    activeLocation=null;displayAudit(null);
+    loadNormalized(imported);
+    report('CSV importado localmente: '+imported.length+' anúncios. Confira a triagem, as duplicidades e a origem antes de selecionar comparáveis.');
+  }catch(e){report(e.message||'Erro ao ler o CSV',true);}
+};
 $('import-btn').onclick=()=>{try{activeLocation=null;displayAudit(null);load(JSON.parse($('json-input').value));}catch(e){report(e.message||'JSON inválido',true);}};
 $('clear-btn').onclick=()=>{records=[];selected.clear();reported=null;center=null;activeLocation=null;displayAudit(null);drawMap(false);refresh();report('Sessão limpa. Nenhum dado foi enviado ao servidor.');};
 function tab(which){const api=which==='api';$('import-panel').classList.toggle('hidden',api);$('api-panel').classList.toggle('hidden',!api);$('tab-api').classList.toggle('active',api);$('tab-import').classList.toggle('active',!api);}
@@ -394,14 +553,22 @@ async function fetchDetails(p,button){
   finally{button.disabled=false;}
 }
 $('radius').oninput=()=>{$('radius-label').textContent=$('radius').value+' km';if(ring)ring.setRadius(Number($('radius').value)*1000);refresh();};
-for(const id of ['in-radius','min-beds','dedupe','result-type','filter-neighborhood','filter-price-min','filter-price-max','filter-area-min','filter-area-max','filter-bathrooms-min','filter-parking-min']){
+for(const id of ['in-radius','min-beds','dedupe','result-type','quality-filter','filter-neighborhood','filter-price-min','filter-price-max','filter-area-min','filter-area-max','filter-bathrooms-min','filter-parking-min']){
   $(id).addEventListener('input',refresh);
   $(id).addEventListener('change',refresh);
 }
 $('export-btn').onclick=()=>{
   const picked=records.filter(p=>selected.has(p.key));if(picked.length<2)return;
-  const fields=['source','id','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser'];
-  const cells=fields.join(';')+'\r\n'+picked.map(p=>fields.map(k=>'"'+String(p[k]??'').replace(/"/g,'""')+'"').join(';')).join('\r\n');
+  const fields=['source','id','type','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser'];
+  const formulaSensitive=new Set(['source','id','type','title','link','neighborhood','city','state','advertiser']);
+  const csvValue=(key,value)=>{
+    const raw=String(value??'');
+    // Protege a abertura do CSV em planilhas contra fórmulas injetadas em
+    // títulos, nomes de anunciantes e outros textos vindos dos portais.
+    const safeRaw=formulaSensitive.has(key)&&/^[\s]*[=+@-]/.test(raw)?"'"+raw:raw;
+    return '"'+safeRaw.replace(/"/g,'""')+'"';
+  };
+  const cells=fields.join(';')+'\r\n'+picked.map(p=>fields.map(k=>csvValue(k,p[k])).join(';')).join('\r\n');
   const object=URL.createObjectURL(new Blob(['\ufeff'+cells],{type:'text/csv;charset=utf-8'}));
   const a=document.createElement('a');a.href=object;a.download='comparaveis-imovel-busca.csv';a.click();setTimeout(()=>URL.revokeObjectURL(object),1200);
 };
