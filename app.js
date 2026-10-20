@@ -992,7 +992,11 @@ async function callApi(query){
     body:JSON.stringify(query)
   });
   const body=await response.json();
-  if(!response.ok)throw new Error(body.error||'Falha na GeckoAPI (HTTP '+response.status+')');
+  if(!response.ok){
+    const error=new Error(body.error||'Falha na GeckoAPI (HTTP '+response.status+')');
+    error.httpStatus=response.status;
+    throw error;
+  }
   return body;
 }
 function validatedNum(id){
@@ -1059,19 +1063,153 @@ function displayAudit(a){
   originLink.classList.toggle('hidden',!check.url);
   if(check.url){originLink.href=check.url;}else originLink.removeAttribute('href');
 }
+
+// Orquestração no cliente sobre /api/extract: um portal por vez, sem endpoint
+// privilegiado nem chamadas não autorizadas à GeckoAPI.
+async function executeMixedSearch(plans,fetcher,onUpdate=()=>{}){
+  const states=plans.map(query=>({target:query.target,label:mixedName(query.target),
+    state:'queued',items:[],audit:null,error:null,accepted:0,discarded:0,
+    collectedAt:null,requestId:null,executionId:null}));
+  onUpdate(states);
+  for(let i=0;i<plans.length;i++){
+    const current=states[i],query=plans[i];
+    current.state='running';
+    onUpdate(states);
+    try{
+      const response=await fetcher(query);
+      const data=response?.data;
+      if(response?.notFound||data===null){
+        current.items=[];current.state='done';current.collectedAt=new Date().toISOString();
+      }else if(!data||typeof data!=='object'||!Array.isArray(data.items)){
+        throw new Error('A resposta desta fonte não contém uma lista de anúncios verificável.');
+      }else{
+        const audit=data.locationAudit||null;
+        current.audit=audit;
+        current.requestId=audit?.requestId||null;
+        current.executionId=audit?.executionId||null;
+        current.collectedAt=new Date().toISOString();
+        // A origem é a fonte que consultamos, sem confiar no campo "source"
+        // possivelmente divergente do retorno externo.
+        const normalizedItems=data.items.length?payload({data:{...data,source:query.target}}).items:[];
+        current.items=normalizedItems.filter(p=>
+          canon(p.city)===canon(query.city)&&uf(p.state)===uf(query.state));
+        current.accepted=current.items.length;
+        current.discarded=Math.max(0,(audit?.providerItems??data.items.length)-current.accepted);
+        current.items=current.items.map(p=>({
+          ...p,collectedAt:current.collectedAt,
+          requestId:current.requestId,executionId:current.executionId
+        }));
+        current.state='done';
+      }
+    }catch(error){
+      current.state='error';current.error=String(error?.message||'Falha desconhecida');
+      if([401,429,503].includes(error?.httpStatus)){
+        for(const waiting of states.slice(i+1)){
+          waiting.state='skipped';
+          waiting.error=error.httpStatus===429?'Limite de consultas; nenhuma chamada adicional foi feita.':
+            'Execução interrompida por problema de autorização ou configuração.';
+        }
+        onUpdate(states);
+        break;
+      }
+    }
+    onUpdate(states);
+  }
+  return states;
+}
+function renderMixedResults(states){
+  const el=$('mixed-results');
+  el.classList.remove('hidden');
+  el.replaceChildren();
+  const header=document.createElement('h3');header.textContent='Resultado por fonte';
+  el.appendChild(header);
+  const desc={queued:'Aguardando consulta',running:'Consultando...',
+    done:'Concluída',error:'Falhou',skipped:'Não executada'};
+  for(const row of states){
+    const div=document.createElement('div');div.className='mixed-source';
+    const name=document.createElement('strong');name.textContent=row.label;div.appendChild(name);
+    const info=document.createElement('span');info.className=row.state==='done'?'success':
+      row.state==='error'?'failure':'pending';
+    if(row.state==='done'){
+      info.textContent=row.accepted+' anúncio(s) válidos'+
+        (row.discarded?' · '+row.discarded+' descartados por localização':'')+
+        (row.requestId?' · ID de consulta: '+row.requestId:'')+
+        (row.audit?.requestUrlCheck?.status==='mismatch'?' · Verifique a URL gerada pela OLX':'');
+    }else info.textContent=desc[row.state]+(row.error?': '+row.error:'');
+    div.appendChild(info);el.appendChild(div);
+  }
+}
+async function performMixedSearch(plans,fetcher=callApi){
+  const collected=[];
+  const rows=await executeMixedSearch(plans,fetcher,states=>{
+    renderMixedResults(states);
+    const ready=states.filter(x=>x.state==='done').length;
+    const failed=states.filter(x=>x.state==='error').length;
+    const running=states.find(x=>x.state==='running');
+    report('Pesquisa mista: '+ready+' de '+states.length+' fontes concluídas'+
+      (running?' · consultando '+running.label:'')+
+      (failed?' · '+failed+' falha(s)':'')+'.');
+    for(const r of states){
+      if(r.state==='done'&&!collected.includes(r.target)){
+        collected.push(r.target);
+        if(r.items.length)loadNormalized(r.items,null);
+      }
+    }
+  });
+  reported=null; // Os totais por portal não devem ser somados como total único.
+  refresh();
+  const success=rows.filter(x=>x.state==='done'),failed=rows.filter(x=>x.state==='error');
+  const count=success.reduce((n,x)=>n+x.accepted,0);
+  report('Pesquisa mista encerrada: '+success.length+'/'+rows.length+' fonte(s) concluída(s), '+
+    count+' anúncio(s) aceitos nas respostas e '+records.length+' anúncio(s) únicos por portal/ID na sessão.'+
+    (failed.length?' Atenção: '+failed.length+' fonte(s) falharam; confira a tabela por fonte.':'')+
+    ' Antes de emitir um PTAM, verifique possíveis duplicidades entre portais e a autenticidade dos anúncios.',
+    failed.length>0||success.length===0);
+  return rows;
+}
+
 function setActiveLocation(query) {
   const next={city:canon(query.city),state:canon(query.state),label:query.city+'/'+query.state};
-  if(!activeLocation||activeLocation.city!==next.city||activeLocation.state!==next.state) {
+  // Preservar CSV previamente importado quando todos os anúncios são do
+  // mesmo município. Ao mudar de município, não misturar amostras.
+  const priorDifferent=activeLocation?
+    activeLocation.city!==next.city||activeLocation.state!==next.state:
+    records.some(p=>canon(p.city)!==next.city||uf(p.state)!==uf(query.state));
+  if(priorDifferent){
     records=[];selected.clear();reported=null;center=null;drawMap(false);
   }
   activeLocation=next;
 }
 $('api-btn').onclick=async()=>{
-  const button=$('api-btn');let query;
-  try{query=queryFilters();}catch(e){report(e.message,true);return;}
+  const button=$('api-btn');let query,plans;
+  try{
+    query=queryFilters();
+    if(mixedMode())plans=planMixedSearch(query,mixedTargets(),{
+      imovelwebUrl:$('mixed-imovelweb-url').value.trim(),
+      olxRegion:$('olx-region').value.trim(),
+      olxCategory:$('olx-category').value.trim()
+    });
+  }catch(e){report(e.message,true);return;}
   if(!$('access').value){report('Informe o código de acesso do laboratório, não o token da GeckoAPI.',true);return;}
-  if(!window.confirm('Esta consulta à GeckoAPI poderá consumir créditos. Deseja continuar?'))return;
-  button.disabled=true;report('Consultando '+query.target+'... Aguarde alguns segundos.');
+  const confirmation=plans?
+    'Consultar '+plans.length+' fonte(s) em sequência (até '+plans.length+
+    ' chamadas à GeckoAPI, uma página por fonte)? Cada chamada poderá consumir créditos. Fontes com falha não serão repetidas automaticamente.':
+    'Esta consulta à GeckoAPI poderá consumir créditos. Deseja continuar?';
+  if(!window.confirm(confirmation))return;
+  button.disabled=true;
+  if(plans){
+    try{
+      setActiveLocation(query);
+      mirrorLocalFilters(query);
+      displayAudit(null);
+      reported=null;
+      await performMixedSearch(plans);
+    }catch(error){report(error.message||'Falha durante a pesquisa mista.',true);}
+    finally{button.disabled=false;}
+    return;
+  }
+  $('mixed-results').classList.add('hidden');
+  report('Consultando '+query.target+'... Aguarde alguns segundos.');
   try {
     const body=await callApi(query);
     if(body?.notFound||body?.data===null){report('O provedor não retornou anúncios para essa consulta.',true);return;}
