@@ -1037,6 +1037,10 @@ test('Conferência: CSV guarda histórico declarado mas importação não autent
  assert.equal(parsed.reviewHistory.length,1);
  assert.equal(parsed.reviewImported,true);
  assert.equal(parsed.manualOverrides.usable,undefined);
+ const withoutReviews=ctx.parseExportCsv([headers,
+   [...values.slice(0,10),'[]'].map(encode).join(';')].join('\n'))[0];
+ assert.equal(withoutReviews.reviewImported,false);
+ assert.equal(withoutReviews.reviewHistory.length,0);
  assert.match(parsed.reviewHistory[0].evidenceLevel,/não autenticado/);
  const bad=ctx.parseImportedHistory(JSON.stringify([{field:'city',oldValue:'X',newValue:'Y',source:'title',
    note:'Alteração indevida de cidade',at:'2026-10-20T12:00:00.000Z'}]));
