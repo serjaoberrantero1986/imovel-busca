@@ -18,23 +18,36 @@ function classify(item) {
   if(match(['farm','rural']))return 'farm';
   if(match(['penthouse']))return 'penthouse';
   if(match(['warehouse']))return 'warehouse';
+  if(match(['commercial_point']))return 'commercial_point';
   if(match(['commercial_room']))return 'commercial_room';
-  if(match(['apartment','flat','kitnet']))return 'apartment';
+  if(match(['two_story_house']))return 'two_story_house';
+  if(match(['condominium']))return 'condominium';
+  if(match(['flat']))return 'flat';
+  if(match(['kitnet']))return 'kitnet';
+  if(match(['apartment']))return 'apartment';
   if(match(['home','house']))return 'house';
   const identify=raw=>{
     if(!raw)return 'unknown';
-    if(/^(casa|casas|sobrado|sobrados)\b/.test(raw))return 'house';
-    if(/^(apartamento|apartamentos|studio|kitnet|flat)\b/.test(raw))return 'apartment';
+    if(/^(sobrado|sobrados)\b/.test(raw))return 'two_story_house';
+    if(/^(casa|casas)\b/.test(raw))return 'house';
+    if(/^(studio|kitnet)\b/.test(raw))return 'kitnet';
+    if(/^(flat|flats)\b/.test(raw))return 'flat';
+    if(/^(apartamento|apartamentos)\b/.test(raw))return 'apartment';
+    if(/^(ponto comercial|pontos comerciais)\b/.test(raw))return 'commercial_point';
     if(/^(terreno|terrenos|lote|lotes)\b/.test(raw))return 'land';
     if(/^(chacara|chacaras|sitio|sitios|fazenda|fazendas)\b/.test(raw))return 'farm';
     if(/^(cobertura|coberturas)\b/.test(raw))return 'penthouse';
     if(/\b(terreno|terrenos|lote|lotes)\b/.test(raw))return 'land';
     if(/\b(chacara|chacaras|sitio|sitios|fazenda|fazendas)\b/.test(raw))return 'farm';
     if(/\b(cobertura|coberturas)\b/.test(raw))return 'penthouse';
+    if(/\b(ponto comercial|pontos comerciais)\b/.test(raw))return 'commercial_point';
     if(/\b(galpao|galpoes)\b/.test(raw))return 'warehouse';
     if(/\b(sala comercial|salas comerciais)\b/.test(raw))return 'commercial_room';
-    if(/\b(apartamento|apartamentos|studio|kitnet)\b/.test(raw))return 'apartment';
-    if(/\b(casa|casas|sobrado|sobrados)\b/.test(raw))return 'house';
+    if(/\b(studio|kitnet)\b/.test(raw))return 'kitnet';
+    if(/\b(flat|flats)\b/.test(raw))return 'flat';
+    if(/\b(apartamento|apartamentos)\b/.test(raw))return 'apartment';
+    if(/\b(sobrado|sobrados)\b/.test(raw))return 'two_story_house';
+    if(/\b(casa|casas)\b/.test(raw))return 'house';
     return 'unknown';
   };
   const structured=identify(canon([item.realtyType?.name,item.property?.type,item.propertyType,item.typeLabel].filter(Boolean).join(' ')));
@@ -45,7 +58,7 @@ function classify(item) {
   if(link) {
     const parsed=new URL(link);
     if(/(^|\.)vivareal\.com\.br$/.test(parsed.hostname)) {
-      const slug=parsed.pathname.match(/\/imovel\/(casa|sobrado|apartamento|terreno|lote|chacara|sitio|cobertura|galpao|kitnet|flat)(?:-|\/|$)/i)?.[1];
+      const slug=parsed.pathname.match(/\/imovel\/(casa|sobrado|apartamento|terreno|lote|chacara|sitio|cobertura|galpao|kitnet|flat|studio|ponto-comercial)(?:-|\/|$)/i)?.[1];
       if(slug) {
         const fromLink=identify(canon(slug));
         if(fromLink!=='unknown')return fromLink;
@@ -137,9 +150,9 @@ function reviewComparable(p) {
   const missing=[],warnings=[];
   if(p.price===null||!Number.isFinite(p.price)||p.price<=0)missing.push('Preço pedido não informado ou inválido');
   if(p.type==='unknown')missing.push('Tipo de imóvel não identificado');
-  const area=p.type==='land'?p.total:p.usable;
+  const area=['land','farm'].includes(p.type)?p.total:p.usable;
   if(area===null||!Number.isFinite(area)||area<=0)
-    missing.push(p.type==='land'?'Área do terreno ausente':'Área útil não informada');
+    missing.push(['land','farm'].includes(p.type)?'Área do terreno ausente':'Área útil não informada');
   if(!p.city||p.city==='—'||!uf(p.state))missing.push('Município ou UF não confirmados');
   if(!p.link)warnings.push('Sem link público para conferência');
   if(!p.neighborhood||p.neighborhood==='—')warnings.push('Bairro não informado');
@@ -153,15 +166,15 @@ function reviewComparable(p) {
     status:missing.length?'insufficient':warnings.length?'review':'complete',
     issues:[...missing,...warnings],
     unitPrice:p.price>0&&area>0?p.price/area:null,
-    unitAreaLabel:p.type==='land'?'m² de terreno':'m² úteis'
+    unitAreaLabel:['land','farm'].includes(p.type)?'m² de terreno':'m² úteis'
   };
 }
 const qualityLabels={complete:'Dados essenciais completos',review:'Requer conferência',insufficient:'Dados insuficientes'};
 function duplicate(p) {
-  const area=p.type==='land'?p.total:p.usable;
+  const area=['land','farm'].includes(p.type)?p.total:p.usable;
   if(p.type==='unknown'||!p.price||!area||!p.city||!uf(p.state)||!p.neighborhood||p.neighborhood==='—')return false;
   return records.some(q => {
-    const comparedArea=q.type==='land'?q.total:q.usable;
+    const comparedArea=['land','farm'].includes(q.type)?q.total:q.usable;
     if(q.key===p.key||q.type!==p.type||!q.price||!comparedArea)return false;
     if(canon(q.city)!==canon(p.city)||uf(q.state)!==uf(p.state))return false;
     if(canon(q.neighborhood)!==canon(p.neighborhood)||p.neighborhood==='—')return false;
