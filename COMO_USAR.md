@@ -1,6 +1,19 @@
 # Imóvel Busca — laboratório independente
 Este repositório **não** conecta ao Web Imóveis, Supabase ou domínio de produção. Não contém anúncios fictícios e não calcula valor de mercado/PTAM.
 
+## Pesquisa mista — escolha uma, várias ou até cinco fontes
+
+Na aba **Buscar pela GeckoAPI (avançado)**, em **Buscar lista (PLP)**, marque **Pesquisar em várias fontes de uma vez**. O formulário passa a oferecer as fontes **ZAP Imóveis, VivaReal, OLX, Chaves na Mão e Imovelweb**. Você pode marcar uma ou várias. **Selecionar 4 fontes sem URL** marca ZAP, VivaReal, OLX e Chaves; **Selecionar as 5 fontes** inclui também o Imovelweb, que exige informar uma **URL HTTPS pública de resultados terminada em .html**. Sem essa URL, o botão de pesquisa não realiza as consultas e informa o motivo.
+
+1. Cadastre seu imóvel de referência na etapa 1 e abra a aba de busca. Opcionalmente clique **Preencher localização e características usando meu imóvel**: cidade, UF, tipologia, bairro e dormitórios são reaproveitados como ponto de partida. Para imóveis edificados, a faixa de **área útil** é derivada da tolerância já configurada. Para terrenos/imóveis rurais não inferimos área útil a partir do terreno; revise os filtros separadamente.
+2. Escolha uma ou mais fontes, informe cidade/UF e demais filtros, selecione a página (uma página por fonte) e confira o aviso de **até N chamadas**. A API de cada fonte tem seu próprio contrato: os filtros não são idênticos em todos os sites. A OLX usa categoria, região e palavra-chave e pode exigir revisão mais cuidadosa da tipologia; o Imovelweb consulta apenas a URL fornecida. Contagens mínimas de dormitórios/banheiros/vagas e outras restrições podem ser aplicadas **somente na lista local**. A consulta de raio geográfico da API permanece disponível em modo de portal único.
+3. Informe o código de acesso do laboratório e clique **Consultar API (consome créditos)**. Confirme conscientemente o número de consultas e fontes; cada portal selecionado é consultado **uma vez por execução**, em sequência, através do proxy já protegido, sem tentar novamente uma falha automaticamente. O servidor limita requisições; erros 401/429/503 interrompem as chamadas seguintes para evitar desperdício.
+4. Acompanhe o resumo individual por fonte: anúncios aproveitados pela checagem de município/UF, descartados e eventuais falhas, com ID de consulta disponível quando fornecido. O sistema reúne todos os anúncios na mesma lista, sem exigir CSV, mantendo origem e identificador. Totais de resultados reportados pelas fontes **não são somados** como se fossem imóveis distintos.
+5. Confira anúncios repetidos em diferentes portais e as características individuais antes de selecioná-los como comparáveis. No **indicativo preliminar de ofertas**, suspeitas conservadoras de duplicação entre fontes (mesmo município/UF, bairro, tipologia, preço e área próximos e características não conflitantes) são **excluídas preventivamente somente do cálculo**, mas preservadas na lista com explicação — não é prova de que sejam o mesmo imóvel. Você pode selecionar outra oferta após verificação manual. Identidades exatas são igualmente desconsideradas em dobro.
+6. Se desejar guardar os dados, use **Exportar CSV (opcional)**: a exportação mantém fonte, ID, URL, data/hora de coleta, IDs de consulta/execução, filtros enviados (sem senha/token) e classificação comparativa. O CSV antigo continua importável. Data de coleta **não é data de publicação do anúncio**.
+
+A pesquisa mista **não dispensa verificação profissional**, não identifica de forma conclusiva duplicidades, não prova que as fontes tenham aplicado todos os filtros e não produz PTAM. A etapa posterior de parecer técnico precisará de evidências preservadas, critérios de aceitação documentados, tratamento técnico, revisão e assinatura por profissional habilitado. **Nenhum teste automatizado deve chamar a GeckoAPI real com token/custo.**
+
 ## Valor preliminar na tela — sem obrigatoriedade de CSV
 
 Depois de salvar o imóvel de referência e selecionar **ao menos dois anúncios**, a etapa **3. Veja seu indicativo de valor** passa a mostrar **imediatamente** um indicador numérico, uma faixa e os alertas de confiabilidade. O botão de exportação CSV continua opcional.
@@ -11,7 +24,7 @@ Depois de salvar o imóvel de referência e selecionar **ao menos dois anúncios
 2. Cada anúncio aproveitável gera um preço **anunciado por m²** = preço pedido / área pertinente. Não há ajuste arbitrário de número de quartos, bairro, conservação, condição negocial ou terreno entre imóveis edificados; essas divergências são avisadas.
 3. **Indicativo** = mediana dos preços anunciados/m² × metragem da referência. **Faixa observada** = mínimo e máximo desses preços por m² projetados na mesma área. A faixa **não é** um intervalo de confiança estatístico; não há tratamento por fatores conforme NBR 14653 ou inferência estatística neste MVP.
 4. A tela discrimina anúncios selecionados, incluídos, excluídos, motivo da exclusão e cálculo detalhado por comparável. Sem referência, metragem ou ao menos 2 anúncios válidos, não exibe número (nunca exibe zero arbitrário). Menos de 5 anúncios recebe aviso **amostra pequena / confiabilidade baixa**. Com mais anúncios, o status continua **limitado** devido aos dados de oferta não homogeneizados.
-5. Alguns imóveis podem compartilhar atributos ou links. Apenas **identidade exata** (mesmo ID+fonte ou mesma URL) é excluída como duplicidade automática; coincidências aproximadas requerem revisão manual.
+5. Alguns imóveis podem compartilhar atributos ou links. Identidades exatas são excluídas do cálculo; na pesquisa mista, suspeitas conservadoras de duplicação entre portais também são excluídas **preventivamente do indicativo**, sem apagar os registros e sem afirmar que sejam a mesma unidade. A decisão final sobre duplicidade requer revisão humana.
 
 **Exemplo real fornecido pelo usuário:** Casa Ana Guilherme, casa com **110 m² úteis** em Salto de Pirapora/SP. Três casas anunciadas por R$240.000 (119 m²), R$270.000 (100 m²) e R$385.000 (120 m²). Os preços pedidos/m² são R$2.016,81, R$2.700,00 e R$3.208,33; o indicativo baseado na mediana é **R$297.000**, com faixa observada projetada de **R$222 mil a R$353 mil**, sem ajustes por dormitórios, suítes, vagas ou bairro. **Não** comunicar como valor de mercado concluído.
 
@@ -30,7 +43,7 @@ Uma avaliação mercadológica formal (como PTAM) requer caracterização, fonte
 Os valores em R$/m² representam somente **preços pedidos nos anúncios**. Antes de qualquer avaliação técnica, ainda é necessário verificar características, qualidade das fontes, padronização da amostra, finalidade das ofertas e metodologia aplicável. Limpar anúncios não apaga automaticamente o imóvel de referência; este continua apenas na sessão atual.
 
 ## O que funciona sem chave
-1. Abra **Importar JSON** e cole o resultado PLP/PDP fornecido pela GeckoAPI **ou** selecione um CSV anteriormente exportado pelo Imóvel Busca e clique **Importar CSV**. Nenhuma das duas ações consome créditos.
+1. Abra **Importar arquivo** e cole o resultado PLP/PDP fornecido pela GeckoAPI **ou** selecione um CSV anteriormente exportado pelo Imóvel Busca e clique **Importar meus anúncios**. Nenhuma das duas ações consome créditos.
 2. Observe a triagem dos anúncios: **dados essenciais completos**, **requer conferência** ou **dados insuficientes**. A triagem verifica presença/coerência de campos, não comprova origem, veracidade ou homogeneidade.
 3. Veja no mapa somente os anúncios com coordenadas; posição aproximada é sinalizada. Anúncios sem coordenadas continuam na lista.
 4. Ajuste o centro e raio do mapa, filtros de atributos e **triagem dos dados**. A indicação de possíveis duplicidades é informativa, não remove anúncios.
@@ -53,7 +66,7 @@ O marcador **R** só aparece quando as coordenadas de referência foram informad
 ## Versão 0.2 — escolha de portais e comparador
 Aba **Consultar GeckoAPI**:
 1. Selecione **Buscar lista (PLP)**.
-2. Em **Portal**, escolha **ZAP Imóveis, OLX, VivaReal, Chaves na Mão ou Imovelweb**.
+2. Em **Portal**, escolha uma fonte para pesquisa única **ou** marque **Pesquisar em várias fontes de uma vez** para selecionar uma a cinco; para incluir Imovelweb na pesquisa mista, a URL pública .html é obrigatória.
 3. Para ZAP, VivaReal e Chaves na Mão, informe cidade/UF e opcionalmente tipo, bairro, preço, área útil e uma busca por coordenadas. O servidor transmite os filtros estruturados suportados. Na busca por coordenadas, a GeckoAPI usa **2 km fixos** — não confunda com o raio visual de 1–50 km.
 4. Para OLX, informe cidade/UF, escolha **Casa** (ou outro tipo), e consulte. O servidor usa categoria e busca textual; para **casas à venda** utiliza o caminho OLX observado em testes. Isso não garante que a fonte respeitou município ou tipologia, que precisam ser auditados na resposta. Se quiser reproduzir os filtros do próprio portal, cole uma URL de resultado da OLX no campo correspondente; a URL terá prioridade.
 5. Para Imovelweb, forneça URL HTTPS de uma **página de resultados** do Imovelweb; a API não recebe filtros estruturados nessa modalidade.
