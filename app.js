@@ -712,14 +712,22 @@ function applyReviewChanges(p,form,source,note,at=new Date().toISOString()){
     changes.push({field,oldValue:prev,newValue:value,source,note:reason,at,
       evidenceLevel:'declaração do operador, sem autenticação'});
   }
-  if(!changes.length)throw Error('Nenhum campo foi alterado. Informe o dado que conseguiu confirmar.');
+  // Conferir sem alterar valores é um resultado válido, desde que documentado.
+  if(!changes.length)changes.push({
+    field:'verification',oldValue:null,newValue:null,source,note:reason,at,
+    evidenceLevel:'declaração do operador, sem autenticação'
+  });
   const snapshot=p.providerSnapshot&&typeof p.providerSnapshot==='object'?
     {...p.providerSnapshot}:Object.fromEntries(Object.keys(REVIEW_FIELDS).map(field=>[field,p[field]??null]));
   const overrides={...(p.manualOverrides||{})};
   const result={...p,providerSnapshot:snapshot,
     reviewHistory:[...(p.reviewHistory||[]),...changes].slice(-100),
-    reviewImported:false};
+    reviewConfirmation:{source,note:reason,at,
+      changes:changes.filter(x=>x.field!=='verification').length,
+      evidenceLevel:'declaração do operador, sem autenticação'},
+    viewedAt:p.viewedAt||at,reviewImported:false};
   for(const change of changes){
+    if(change.field==='verification')continue;
     result[change.field]=change.newValue;
     overrides[change.field]=true;
   }
@@ -740,26 +748,16 @@ function restoreProviderFields(p,at=new Date().toISOString()){
     result[field]=original;
   }
   result.manualOverrides={};
+  result.reviewConfirmation=null;
   result.reviewHistory=[...(p.reviewHistory||[]),...audit].slice(-100);
   result.reviewImported=false;
   return result;
 }
 function parseImportedHistory(raw){
   if(typeof raw!=='string'||raw.length>20000)return [];
-  try{
-    const data=JSON.parse(raw);
-    if(!Array.isArray(data))return [];
-    return data.slice(-60).filter(e=>e&&typeof e==='object'&&
-      Object.hasOwn(REVIEW_FIELDS,e.field)&&
-      ['listing','title','description','document','contact','restore'].includes(e.source)&&
-      typeof e.note==='string'&&e.note.length<=700&&
-      typeof e.at==='string'&&/^\d{4}-\d\d-\d\dT/.test(e.at)).map(e=>({
-        field:e.field,oldValue:reviewFieldNumber(e.oldValue,e.field),
-        newValue:reviewFieldNumber(e.newValue,e.field),
-        source:e.source,note:e.note,at:e.at,
-        evidenceLevel:'histórico importado do CSV, não autenticado'
-      }));
-  }catch{return [];}
+  try{return validatedReviewEntries(JSON.parse(raw)).map(x=>({
+    ...x,evidenceLevel:'histórico importado do CSV, não autenticado'
+  }));}catch{return [];}
 }
 function reviewTarget(){
   return records.find(x=>x.key===activeReviewKey)||null;
