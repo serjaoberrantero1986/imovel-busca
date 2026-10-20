@@ -889,15 +889,22 @@ function renderEligibility(stats,chosen){
     ['pending','Para confirmar dados'],
     ['excluded','Fora do cálculo']
   ].map(([key,label])=>'<div class="eligibility-metric '+key+'"><strong>'+counts[key]+'</strong><small>'+label+'</small></div>').join('');
+  const reviewCount={unread:0,viewed:0,confirmed:0,edited:0,imported:0};
+  for(const row of rows)reviewCount[reviewState(row.item)]++;
+  $('review-progress').textContent='Não visualizados: '+reviewCount.unread+
+    ' · Visualizados: '+reviewCount.viewed+' · Conferidos: '+reviewCount.confirmed+
+    ' · Corrigidos: '+reviewCount.edited+' · Importados: '+reviewCount.imported+'.';
   const filter=$('eligibility-filter').value||'all';
-  const filtered=filter==='all'?rows:rows.filter(r=>r.classification===filter);
+  const reviewFilter=$('eligibility-review-filter').value||'all';
+  const filtered=rows.filter(r=>(filter==='all'||r.classification===filter)&&
+    (reviewFilter==='all'||reviewState(r.item)===reviewFilter));
   const batch=filtered.slice(0,eligibilityLimit);
   $('eligibility-visible-count').textContent='Mostrando '+batch.length+' de '+filtered.length+' anúncio(s)';
   list.innerHTML=batch.length?batch.map(row=>{
     const link=url(row.item?.link);
     const title='<strong>'+safe(row.label)+'</strong>';
-    return '<div class="eligibility-line"><div>'+title+
-      '<p>'+safe(row.item?.source||'Origem não informada')+
+    return '<div class="eligibility-line review-item-'+reviewState(row.item)+'"><div>'+title+
+      '<p>'+reviewBadge(row.item)+' · '+safe(row.item?.source||'Origem não informada')+
       (Number.isFinite(row.item?.price)?' · '+safe(money(row.item.price)):'')+
       '</p></div><span class="status '+row.classification+'">'+eligibilityNames[row.classification]+'</span>'+
       '<div class="reason"><strong>Motivo:</strong> '+safe(row.reason)+
@@ -908,10 +915,13 @@ function renderEligibility(stats,chosen){
   const more=$('eligibility-more');
   more.classList.toggle('hidden',filtered.length<=eligibilityLimit);
   list.querySelectorAll?.('.review-from-eligibility').forEach(button=>{
-    button.onclick=()=>openReview(decodeURIComponent(button.dataset.reviewKey||''));
+    button.onclick=()=>openReview(decodeURIComponent(button.dataset.reviewKey||''),'eligibility');
   });
 }
 $('eligibility-filter').addEventListener('change',()=>{
+  eligibilityLimit=25;renderOfferIndicator();
+});
+$('eligibility-review-filter').addEventListener('change',()=>{
   eligibilityLimit=25;renderOfferIndicator();
 });
 $('eligibility-more').onclick=()=>{
@@ -1176,7 +1186,8 @@ function renderCards() {
   if (!visible.length) {const el=document.createElement('p');el.className='muted';el.textContent='Nenhum anúncio corresponde aos filtros.';box.appendChild(el);}
   const batch=visible.slice(0,visibleCardLimit);
   for (const p of batch) {
-    const card=document.createElement('article'); card.className='listing'+(selected.has(p.key)?' selected':'');
+    const card=document.createElement('article');
+    card.className='listing review-card-'+reviewState(p)+(selected.has(p.key)?' selected':'');
     const dis=distance(center,p), flag=$('dedupe').checked&&duplicate(p);
     const review=reviewComparable(p);
     const reviewClass=review.status==='complete'?'quality-ok':review.status==='review'?'quality-warn':'quality-missing';
@@ -1186,7 +1197,8 @@ function renderCards() {
       '<div class="row between"><span class="pill">'+safe(p.source)+'</span><span class="muted">'+(validPoint(p)?(p.approx?'📍 Aproximada':'📍 Não certificada'):'Sem coordenadas')+'</span></div>'+
       (p.collectedAt?'<span class="muted">Coletado em '+safe(p.collectedAt.slice(0,10))+
        (p.requestId?' · Consulta '+safe(p.requestId):'')+'</span>':'')+
-      '<h3>'+safe(p.title)+'</h3><div class="row"><span class="pill orange">'+safe(typeLabel[p.type]||'A classificar')+'</span><span class="pill '+reviewClass+'">'+safe(qualityLabels[review.status])+'</span></div>'+
+      '<h3>'+safe(p.title)+'</h3><div class="row">'+reviewBadge(p)+
+      '<span class="pill orange">'+safe(typeLabel[p.type]||'A classificar')+'</span><span class="pill '+reviewClass+'">'+safe(qualityLabels[review.status])+'</span></div>'+
       (match?'<div class="reference-result"><span class="pill '+refClass+'">Referência: '+safe(referenceLabels[match.status])+'</span>'+
         (match.distanceKm!==null?' <span class="muted">'+safe(match.distanceKm.toFixed(1))+' km do imóvel de referência</span>':'')+
         (match.issues.length?'<div class="quality-reasons">'+match.issues.slice(0,4).map(issue=>'<span>'+safe(issue)+'</span>').join('')+'</div>':'')+
@@ -1209,7 +1221,7 @@ function renderCards() {
       (p.detailed?'<div class="pill orange">Dados adicionais consultados</div>':'');
     card.querySelector('.pick').onchange = event=>{if(event.target.checked)selected.add(p.key);else selected.delete(p.key);refresh();};
     const reviewButton=card.querySelector('.review-verify');
-    if(reviewButton)reviewButton.onclick=()=>openReview(p.key);
+    if(reviewButton)reviewButton.onclick=()=>openReview(p.key,'cards');
     const details=card.querySelector('.detail');
     if(details)details.onclick=()=>fetchDetails(p,details);
     box.appendChild(card);
