@@ -9,7 +9,7 @@ function el(id){
 }
 const doc={getElementById:el,createElement(){return {value:'',textContent:'',innerHTML:'',classList:{toggle(){}},querySelector(){return {}},appendChild(){}}}};
 const src=readFileSync(new URL('../app.js',import.meta.url),'utf8');
-const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords,guideAdvice,renderGuidedSummary,selected,computeOfferIndicator,renderOfferIndicator,inferOfferPurpose,setReferenceForTest:reference=>{referenceProfile=reference},planMixedSearch,mixedTargets,executeMixedSearch,performMixedSearch,suspectedCrossPortalRepeat,bulkSelectVisible,syncSelectionToolbar,extractTextEvidence,clearComparableSelection,summarizeEligibility,renderEligibility,applyReviewChanges,restoreProviderFields,parseImportedHistory,openReview,closeReview,reviewTarget})',{document:doc,window:{},console,URL});
+const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords,guideAdvice,renderGuidedSummary,selected,computeOfferIndicator,renderOfferIndicator,inferOfferPurpose,setReferenceForTest:reference=>{referenceProfile=reference},planMixedSearch,mixedTargets,executeMixedSearch,performMixedSearch,suspectedCrossPortalRepeat,bulkSelectVisible,syncSelectionToolbar,extractTextEvidence,clearComparableSelection,summarizeEligibility,renderEligibility,applyReviewChanges,restoreProviderFields,parseImportedHistory,openReview,closeReview,reviewTarget,reviewState,reviewBadge,saveBrowserReview,restoreBrowserReview})',{document:doc,window:{},console,URL});
 test('VivaReal PLP: preços em array e coordenadas aninhadas',()=>{
   const x=ctx.payload({data:{source:'vivareal.com.br',items:[{
     id:'100',title:'Casa à venda',unitTypes:['HOME'],
@@ -991,8 +991,11 @@ test('Conferência: não aceita fontes ou justificativas inválidas e valida cam
    'A ficha do anúncio informa a área privativa.'),/Área útil/);
  assert.throws(()=>ctx.applyReviewChanges(p,{...form,beds:'2.4'},'listing',
    'Conferi a ficha de dormitórios do anúncio.'),/Dormitórios/);
- assert.throws(()=>ctx.applyReviewChanges(p,
-   {...form,usable:'100'},'listing','Conferi a ficha e confirmei os dados.'),/Nenhum campo/);
+ const confirmed=ctx.applyReviewChanges(p,
+   {...form,usable:'100'},'listing','Conferi a ficha e confirmei os dados.');
+ assert.equal(ctx.reviewState(confirmed),'confirmed');
+ assert.equal(confirmed.reviewConfirmation.changes,0);
+ assert.equal(confirmed.reviewHistory.at(-1).field,'verification');
  const good=ctx.applyReviewChanges(p,form,'listing',
    'Conferi a metragem privativa na ficha do anúncio.');
  assert.equal(good.usable,110);
