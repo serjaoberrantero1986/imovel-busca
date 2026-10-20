@@ -545,7 +545,7 @@ test('Painel de valor responde à seleção sem exigir exportação CSV',()=>{
  assert.match(el('offer-indicator').innerHTML,/Selecione pelo menos dois/);
  ctx.selected.add('viva:1');ctx.selected.add('viva:2');
  ctx.renderOfferIndicator();
- assert.match(el('offer-indicator').innerHTML,/R\$ 269\.500/);
+ assert.match(el('offer-indicator').innerHTML,/R\$\s270\.000/);
  assert.match(el('offer-indicator').innerHTML,/Como este número foi calculado/);
  assert.match(el('offer-indicator').innerHTML,/não um valor de avaliação/);
  ctx.selected.clear();ctx.records.length=0;
