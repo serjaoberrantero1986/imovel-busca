@@ -5,7 +5,7 @@ import handler from '../api/extract.js';
 
 function node(id) {
   return {value:id==='radius'?'5':'',checked:false,disabled:false,textContent:'',innerHTML:'',
-    className:'',classList:{toggle(){}},children:[],addEventListener(){},replaceChildren(){this.children=[]},
+    className:'',classList:{toggle(){},add(){},remove(){}},children:[],addEventListener(){},replaceChildren(){this.children=[]},
     appendChild(item){this.children.push(item)},querySelector(selector){return selector==='.pick'?{}:null;}};
 }
 const elements=new Map();
