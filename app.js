@@ -1187,6 +1187,7 @@ function parseExportCsv(raw){
     const latitude=number(row.lat),longitude=number(row.lng);
     const valid=latitude!==null&&longitude!==null&&Math.abs(latitude)<=90&&Math.abs(longitude)<=180&&(latitude!==0||longitude!==0);
     const neighborhood=row.neighborhood?.trim()||'—';
+    const importedReviewHistory=parseImportedHistory(row.reviewHistory);
     const record={
       source,id:id||link,key:source+':'+(id||link),type,
       offerPurpose:inferOfferPurpose({...row,link}),
@@ -1206,8 +1207,8 @@ function parseExportCsv(raw){
       state:uf(row.state)||row.state?.trim()||'—',
       lat:valid?latitude:null,lng:valid?longitude:null,approx:row.approx?.trim().toLowerCase()==='true',
       advertiser:row.advertiser?.trim()||'—',description:'—',amenities:[],detailed:false,
-      reviewHistory:parseImportedHistory(row.reviewHistory),
-      reviewImported:!!row.reviewHistory?.trim(),
+      reviewHistory:importedReviewHistory,
+      reviewImported:importedReviewHistory.length>0,
       providerSnapshot:null,manualOverrides:{},providerConflicts:{}
     };
     return record;
