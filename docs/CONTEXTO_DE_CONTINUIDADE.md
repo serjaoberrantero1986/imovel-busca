@@ -128,3 +128,18 @@ Nova etapa desenvolvida exclusivamente no repositório `imovel-busca`, na branch
 - Nenhum arquivo em `imovel-hub` foi modificado e nenhuma consulta autenticada adicional à GeckoAPI foi feita.
 
 **Próximas tarefas**: confirmar testes da PR e publicação Vercel; validar manualmente importação do CSV real no navegador; confirmar com o usuário o recorte de tipologia, região, atributos e imóvel avaliado antes de construir indicadores estatísticos, metodologia e futuras integrações no SaaS principal. Não declarar avaliações reais sem validação técnica.
+
+## 9. Cadastro livre de imóvel de referência — 2026-10-19
+
+Implementação no laboratório independente, branch `feat/referencia-multitipologia-20261019`, iniciada após o usuário confirmar que deseja cadastrar **qualquer tipo de imóvel**.
+
+- Formulário responsivo com 12 tipos nomeados e `other` (descrição livre), município/UF, bairro, área útil, construída e total/terreno separadas, dormitórios, suítes, banheiros, vagas e geolocalização opcional.
+- Triagem de semelhança por critérios explícitos: tipologia e município incompatíveis geram `incompatible`; falta de atributos essenciais gera `insufficient`; diferenças de metragem, bairro, subtipo, quantidades ou distância geram `review`; somente critérios efetivamente confirmados geram `compatible`.
+- Área de comparação: `total` para terrenos e imóveis rurais; `usable` para demais. A metragem construída `built` não é convertida em útil e sua ausência nos fornecedores não é presumida.
+- Tolerância de área padrão ±20%, configurável de 5% a 50%, **como recurso de triagem exploratória**, sem fundamentação estatística ou nota de avaliação.
+- Coordenadas de referência podem ser informadas, mas não geocodificadas automaticamente; marcador próprio no mapa, raio opcional e distinção explícita de anúncios sem coordenadas.
+- Filtros por estado da triagem, ordenação conservadora, etiquetas e razões em cada card, alertas no comparador, exportação CSV com dados da referência e motivos para revisão.
+- Campo `Outro tipo` permite livre cadastramento, mas a equivalência de tipo personalizado não é julgada automaticamente; precisa de validação humana.
+- Cadastro efêmero na aba; sem Supabase e sem persistência, sem uso de créditos GeckoAPI. Não alterar `imovel-hub` sem autorização específica.
+
+**Limites**: conferir finalidade da oferta (venda/locação), situação de mercado, conservação, documentação, recorte temporal, amostragem e direitos de dados antes de transformar essa triagem em avaliação. Não chamar `compatible` de comparável aprovado ou gerar PTAM sem metodologia e responsabilidade técnica.
