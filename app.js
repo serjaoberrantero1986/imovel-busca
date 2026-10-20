@@ -522,7 +522,9 @@ function computeOfferIndicator(reference,chosen){
       warnings:review.issues.slice(0,5)});
   }
   if(result.included.length<2){
-    result.reasons.push('Apenas '+result.included.length+' anúncio(s) da amostra passaram pelos requisitos. É necessário ter ao menos dois para mostrar um indicativo.');
+    result.reasons.push(!list.length?
+      'Selecione pelo menos dois anúncios para calcular o indicativo. Novas importações entram automaticamente na triagem por padrão.':
+      'Apenas '+result.included.length+' anúncio(s) da amostra passaram pelos requisitos. É necessário ter ao menos dois para mostrar um indicativo.');
     return result;
   }
   const units=result.included.map(x=>x.unit).sort((a,b)=>a-b);
