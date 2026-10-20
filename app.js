@@ -679,11 +679,13 @@ function showReviewError(message){
   box.classList.toggle('hidden',!message);
 }
 function showSavedReviewNotice(message,origin='eligibility'){
-  const toast=$('review-saved');
-  toast.textContent=message;
-  toast.classList.remove('hidden');
-  const section=origin==='cards'?'results':'eligibility-panel';
-  $(section)?.scrollIntoView?.({behavior:'smooth',block:'start'});
+  const element=origin==='cards'?'review-saved-cards':'review-saved';
+  for(const id of ['review-saved','review-saved-cards']){
+    const toast=$(id);
+    toast.textContent=message;
+    toast.classList.toggle('hidden',id!==element);
+  }
+  $(element)?.scrollIntoView?.({behavior:'smooth',block:'start'});
 }
 
 function reviewFieldNumber(raw,field){
@@ -784,6 +786,7 @@ function openReview(key,origin='eligibility'){
   reviewReturnSource=origin;
   if(!p.viewedAt){p.viewedAt=new Date().toISOString();saveBrowserReview(p);}
   $('review-saved').classList.add('hidden');
+  $('review-saved-cards').classList.add('hidden');
   showReviewError('');
   refresh();
   const panel=$('review-panel');
@@ -926,6 +929,16 @@ $('eligibility-review-filter').addEventListener('change',()=>{
 });
 $('eligibility-more').onclick=()=>{
   eligibilityLimit+=25;renderOfferIndicator();
+};
+
+$('clear-browser-reviews').onclick=()=>{
+  if(window.confirm?.('Apagar as conferências guardadas neste navegador? A lista atual continuará aberta, mas os registros não serão recuperados após atualizar e reimportar o CSV.')===false)return;
+  try{
+    window.localStorage?.removeItem(REVIEW_LOCAL_KEY);
+    showSavedReviewNotice('Conferências locais apagadas deste navegador. Os anúncios atualmente abertos foram preservados; exporte um CSV se quiser conservar esse trabalho.');
+  }catch{
+    report('Não foi possível limpar as revisões do armazenamento deste navegador.',true);
+  }
 };
 
 function renderOfferIndicator(){
