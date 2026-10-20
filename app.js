@@ -137,7 +137,7 @@ function payload(input) {
   return {items:arr.map(x=>normalized(x,source)),total:typeof d?.totalResults==='number'?d.totalResults:typeof d?.total==='number'?d.total:null};
 }
 function report(message, error=false) { $('status').textContent = message; $('status').className = error ? 'status error' : 'status'; }
-const validPoint = p => p.lat !== null && p.lng !== null;
+const validPoint = p => p&&Number.isFinite(p.lat)&&Number.isFinite(p.lng)&&Math.abs(p.lat)<=90&&Math.abs(p.lng)<=180&&(p.lat!==0||p.lng!==0);
 function distance(a,b) { if (!a || !validPoint(b)) return null; const rad = Math.PI/180, dLat=(b.lat-a.lat)*rad, dLon=(b.lng-a.lng)*rad; const z = Math.sin(dLat/2)**2 + Math.cos(a.lat*rad)*Math.cos(b.lat*rad)*Math.sin(dLon/2)**2; return 12742.018*Math.asin(Math.min(1,Math.sqrt(z))); }
 const hasMap = typeof window.L !== 'undefined';
 if (hasMap) {
@@ -787,8 +787,20 @@ for(const id of ['in-radius','min-beds','dedupe','result-type','quality-filter',
 }
 $('export-btn').onclick=()=>{
   const picked=records.filter(p=>selected.has(p.key));if(picked.length<2)return;
-  const fields=['source','id','type','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser'];
-  const formulaSensitive=new Set(['source','id','type','title','link','neighborhood','city','state','advertiser']);
+  const fields=['source','id','type','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser',
+    'ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_area_m2','ref_area_tolerance_percent','ref_status','ref_reasons'];
+  const derived=p=>{
+    const r=referenceProfile,m=assessReference(r,p),land=r&&['land','farm'].includes(r.type);
+    return {
+      ref_name:r?.name??'',ref_type:r?(r.type==='other'?r.customType:r.type):'',
+      ref_city:r?.city??'',ref_state:r?.state??'',
+      ref_area_used:r?(land?'total':'usable'):'',
+      ref_area_m2:r?(land?r.total:r.usable)??'':'',
+      ref_area_tolerance_percent:r?.tolerance??'',ref_status:m?.status??'',
+      ref_reasons:m?.issues.join(' | ')??''
+    };
+  };
+  const formulaSensitive=new Set(['source','id','type','title','link','neighborhood','city','state','advertiser','ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_status','ref_reasons']);
   const csvValue=(key,value)=>{
     const raw=String(value??'');
     // Protege a abertura do CSV em planilhas contra fórmulas injetadas em
@@ -796,7 +808,7 @@ $('export-btn').onclick=()=>{
     const safeRaw=formulaSensitive.has(key)&&/^[\s]*[=+@-]/.test(raw)?"'"+raw:raw;
     return '"'+safeRaw.replace(/"/g,'""')+'"';
   };
-  const cells=fields.join(';')+'\r\n'+picked.map(p=>fields.map(k=>csvValue(k,p[k])).join(';')).join('\r\n');
+  const cells=fields.join(';')+'\r\n'+picked.map(p=>{const record={...p,...derived(p)};return fields.map(k=>csvValue(k,record[k])).join(';');}).join('\r\n');
   const object=URL.createObjectURL(new Blob(['\ufeff'+cells],{type:'text/csv;charset=utf-8'}));
   const a=document.createElement('a');a.href=object;a.download='comparaveis-imovel-busca.csv';a.click();setTimeout(()=>URL.revokeObjectURL(object),1200);
 };
