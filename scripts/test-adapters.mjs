@@ -9,7 +9,7 @@ function el(id){
 }
 const doc={getElementById:el,createElement(){return {value:'',textContent:'',innerHTML:'',classList:{toggle(){}},querySelector(){return {}},appendChild(){}}}};
 const src=readFileSync(new URL('../app.js',import.meta.url),'utf8');
-const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords})',{document:doc,window:{},console,URL});
+const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords,guideAdvice,renderGuidedSummary,selected})',{document:doc,window:{},console,URL});
 test('VivaReal PLP: preços em array e coordenadas aninhadas',()=>{
   const x=ctx.payload({data:{source:'vivareal.com.br',items:[{
     id:'100',title:'Casa à venda',unitTypes:['HOME'],
@@ -317,4 +317,74 @@ test('Filtro local de área em terreno utiliza área total, nunca inventa área 
  assert.deepEqual(Array.from(ctx.visibleRecords(),p=>p.id),['area-land']);
  el('filter-area-min').value='';
  ctx.records.length=0;
+});
+
+test('Orientação de avaliação: informa de modo simples que falta metragem da referência',()=>{
+ const r=ctx.makeReference({name:'Casa Ana Guilherme',type:'house',city:'Salto de Pirapora',state:'SP',
+  beds:3,suites:1,baths:2,spaces:2,tolerance:20});
+ const ads=[{id:'1',title:'Casa no Parque Pirapora',type:'house',price:240000,usable:119,
+   beds:2,suites:1,baths:2,spaces:2,city:'Salto de Pirapora',state:'SP',lat:null,lng:null}];
+ const advice=ctx.guideAdvice(r,ads,ads);
+ assert.equal(advice.level,'important');
+ assert.match(advice.message,/área útil/);
+ assert.match(advice.message,/Casa Ana Guilherme/);
+ assert.match(advice.message,/Volte à etapa 1/);
+});
+test('Orientação: avança da referência para importação e escolha de dois anúncios',()=>{
+ const r=ctx.makeReference({type:'land',city:'Salto de Pirapora',state:'SP',total:250});
+ const ad={price:200000,type:'land',total:250,city:'Salto de Pirapora',state:'SP',lat:null,lng:null};
+ assert.match(ctx.guideAdvice(r,[],[]).message,/CSV/);
+ assert.match(ctx.guideAdvice(r,[ad],[]).message,/dois anúncios/);
+ assert.match(ctx.guideAdvice(r,[ad],[ad]).message,/mais um/);
+ assert.match(ctx.guideAdvice(r,[ad,ad],[ad,ad]).message,/Confira as diferenças/);
+});
+test('Resumo guiado: exibe motivos reais de anúncios selecionados sem gerar valor de mercado',()=>{
+ ctx.records.length=0;ctx.selected.clear();
+ const ad={id:'1',key:'viva:1',source:'vivareal.com.br',type:'house',title:'Casa · Jardim São Carlos',
+  link:null,price:270000,usable:100,total:261,beds:2,suites:1,baths:2,spaces:4,
+  city:'Salto de Pirapora',state:'SP',neighborhood:'Jardim São Carlos',lat:null,lng:null,
+  approx:false,amenities:[],advertiser:'—',detailed:false};
+ const ad2={...ad,id:'2',key:'viva:2',title:'Casa · São Lucas',price:385000,usable:120,beds:3,suites:3};
+ ctx.records.push(ad,ad2);
+ ctx.selected.add(ad.key);ctx.selected.add(ad2.key);
+ el('ref-name').value='Casa Ana Guilherme';
+ el('ref-type').value='house';
+ el('ref-city').value='Salto de Pirapora';
+ el('ref-state').value='SP';
+ el('ref-usable').value='';
+ el('ref-beds').value='3';
+ el('ref-suites').value='1';
+ el('ref-baths').value='2';
+ el('ref-spaces').value='2';
+ el('ref-tolerance').value='20';
+ el('reference-save').onclick();
+ ctx.renderGuidedSummary();
+ assert.match(el('guided-summary').innerHTML,/Casa Ana Guilherme/);
+ assert.match(el('guided-summary').innerHTML,/Falta um dado essencial/);
+ assert.match(el('guided-summary').innerHTML,/270/);
+ assert.match(el('guided-summary').innerHTML,/385/);
+ assert.match(el('guided-summary').innerHTML,/dormitórios/);
+ assert.doesNotMatch(el('guided-summary').innerHTML,/valor estimado: R\$/i);
+ el('ref-usable').value='115';
+ el('reference-save').onclick();
+ ctx.renderGuidedSummary();
+ assert.doesNotMatch(el('guided-summary').innerHTML,/Falta um dado essencial/);
+ ctx.selected.clear();ctx.records.length=0;
+ el('reference-clear').onclick();
+});
+
+test('Interface simplificada: referência, arquivo e resultado seguem três passos claros',()=>{
+ const html=readFileSync(new URL('../index.html',import.meta.url),'utf8');
+ const pos=['id="reference-panel"','id="csv-file"','id="guided-summary"','id="results"'].map(value=>html.indexOf(value));
+ assert.ok(pos.every(value=>value>=0), 'Todos os controles do fluxo devem existir');
+ assert.ok(pos.every((value,i)=>i===0||value>pos[i-1]),'A referência precede a importação e o resultado');
+ for(const id of ['map-extra','comparison-extra','technical-status','quality-filter','csv-import-btn','export-btn'])
+   assert.match(html,new RegExp('id="'+id+'"'),'Controle '+id+' deve continuar disponível');
+ const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(match=>match[1]);
+ assert.equal(ids.length,new Set(ids).size,'Elementos com id duplicado impediriam os controles de funcionar');
+ assert.match(html,/<details[^>]*id="map-extra"/);
+ assert.match(html,/<details[^>]*id="comparison-extra"/);
+ assert.match(html,/1\. Descreva o imóvel/);
+ assert.match(html,/2\. Adicione anúncios semelhantes/);
+ assert.match(html,/3\. Entenda sua comparação/);
 });

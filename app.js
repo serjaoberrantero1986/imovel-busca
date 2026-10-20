@@ -319,6 +319,53 @@ function assessReference(reference,p){
 function referenceTitle(reference){
   return reference.type==='other'?reference.customType:typeLabel[reference.type];
 }
+
+function guideAdvice(reference,items,chosen){
+  const label=reference&&['land','farm'].includes(reference.type)?'área do terreno':'área útil / privativa';
+  const area=reference?(['land','farm'].includes(reference.type)?reference.total:reference.usable):null;
+  if(!reference)return {level:'important',message:'Primeiro, descreva o imóvel que deseja analisar na etapa 1 e clique em Salvar meu imóvel.'};
+  if(area===null)return {level:'important',message:'Falta um dado essencial: informe a '+label+' de '+reference.name+'. Sem essa metragem, nenhum anúncio poderá ter o tamanho comparado com segurança. Volte à etapa 1, preencha o campo e salve novamente.'};
+  if(!items.length)return {level:'normal',message:'Imóvel cadastrado. Agora importe um CSV de anúncios na etapa 2. O arquivo será lido no navegador, sem gastar créditos.'};
+  if(!chosen.length)return {level:'normal',message:'Agora escolha pelo menos dois anúncios marcando a opção Comparar em cada imóvel da lista abaixo.'};
+  if(chosen.length===1)return {level:'normal',message:'Você já escolheu um anúncio. Selecione pelo menos mais um para confrontar preços pedidos e características.'};
+  const reviewed=chosen.map(p=>assessReference(reference,p));
+  const missing=reviewed.filter(x=>x.status==='insufficient').length;
+  const incompatible=reviewed.filter(x=>x.status==='incompatible').length;
+  if(incompatible)return {level:'important',message:'Você selecionou '+chosen.length+' anúncios, mas '+incompatible+' estão fora do recorte de tipologia ou município. Considere substituí-los antes de aprofundar a comparação.'};
+  if(missing)return {level:'important',message:'Você selecionou '+chosen.length+' anúncios. Em '+missing+' faltam dados para conferir a semelhança. Veja os motivos abaixo; mantenha apenas os anúncios que puder verificar.'};
+  return {level:'normal',message:'Você selecionou '+chosen.length+' anúncios. Confira as diferenças abaixo, abra os links originais e mantenha apenas imóveis realmente equivalentes. O sistema não calcula o valor de mercado.'};
+}
+function renderGuidedSummary(){
+  const el=$('guided-summary');
+  if(!el)return;
+  const items=records.filter(p=>selected.has(p.key));
+  const advice=guideAdvice(referenceProfile,records,items);
+  let html='<div class="guide-next'+(advice.level==='important'?' important':'')+'"><strong>Próximo passo:</strong> '+safe(advice.message)+
+    (referenceProfile?'<div style="margin-top:8px"><a href="#reference-panel">Revisar dados do meu imóvel ↑</a></div>':'')+'</div>';
+  if(items.length){
+    html+='<div class="guide-meta">Anúncios escolhidos ('+items.length+'). Valores abaixo são <strong>preços anunciados</strong>, não preços de venda ou avaliações.</div>';
+    for(const p of items){
+      const outcome=referenceProfile?assessReference(referenceProfile,p):null;
+      const review=reviewComparable(p);
+      const issues=outcome?.issues??['Cadastre o imóvel de referência para comparar características.'];
+      const area=areaForLocalComparison(p);
+      const label=['land','farm'].includes(p.type)?'m² de terreno':'m² úteis';
+      html+='<div class="guide-row"><div><div class="guide-name">'+safe(p.title)+'</div>'+
+        '<div class="guide-meta">'+safe(typeLabel[p.type]||'Imóvel')+' · '+safe(p.neighborhood)+' · '+safe(p.city)+
+        (area!==null?' · '+safe(area)+' '+label:' · sem metragem confirmada')+'</div>'+
+        (outcome?'<div style="margin-top:7px"><span class="pill '+(outcome.status==='compatible'?'quality-ok':outcome.status==='review'?'quality-warn':'quality-missing')+'">'+
+           safe(referenceLabels[outcome.status])+'</span></div>':'')+
+        (issues.length?'<p class="guide-reason"><strong>Conferir:</strong> '+safe(issues.slice(0,3).join(' · '))+(issues.length>3?' · outros pontos na tabela completa':'')+'</p>':'<p class="guide-reason">Nenhuma diferença identificada nos campos disponíveis. Ainda confirme o anúncio e a conservação do imóvel.</p>')+
+        (review.status==='insufficient'?'<p class="guide-reason">O anúncio também tem dados essenciais ausentes.</p>':'')+
+        '</div><div class="guide-price">'+safe(money(p.price))+
+        (review.unitPrice!==null?'<div class="guide-meta">'+safe(money(review.unitPrice))+' / '+label+'</div>':'')+
+        '</div></div>';
+    }
+  }
+  html+='<p class="hint"><strong>Importante:</strong> este resultado serve para escolher e conferir comparáveis. Não calcula valor sugerido, preço negociado ou PTAM. Não transforme uma média de anúncios em avaliação sem metodologia técnica e validação das amostras.</p>';
+  el.innerHTML=html;
+}
+
 function readReferenceFields(){
   const keys={name:'ref-name',type:'ref-type',customType:'ref-custom-type',
     city:'ref-city',state:'ref-state',neighborhood:'ref-neighborhood',
@@ -330,21 +377,29 @@ function readReferenceFields(){
 function syncReferenceFields(){
   const type=$('ref-type').value;
   $('ref-custom-wrap').classList.toggle('hidden',type!=='other');
-  const primaryArea=['land','farm'].includes(type)?'área total do terreno':'área útil';
-  $('ref-area-hint').textContent='Para '+(typeLabel[type]||'o tipo selecionado')+
-    ', a referência utiliza '+primaryArea+'. Área construída não substitui área útil; campos faltantes ficam sinalizados.';
+  const isLand=['land','farm'].includes(type);
+  const primaryArea=isLand?'área do terreno':'área útil / privativa';
+  $('ref-area-hint').textContent='Campo principal para '+(typeLabel[type]||'o imóvel selecionado')+': '+primaryArea+
+    ' (m²). Sem esta metragem não é possível avaliar a semelhança de tamanho. Área construída não substitui área útil.';
+  const useful=$('ref-usable'),total=$('ref-total');
+  useful.classList.toggle('main-area-required',!isLand&&type!==''&&!useful.value.trim());
+  total.classList.toggle('main-area-required',isLand&&!total.value.trim());
 }
 function showReference(){
   const summary=$('ref-summary'),filter=$('reference-filter'),sort=$('reference-sort');
   filter.disabled=!referenceProfile;sort.disabled=!referenceProfile;
   if(!referenceProfile){
     filter.value='';sort.value='';
-    summary.textContent='Nenhum imóvel de referência cadastrado. Os anúncios continuam disponíveis sem pontuação ou exclusão automática.';
+    summary.textContent='Ainda não há imóvel cadastrado. Informe tipo, cidade, UF e a metragem principal para começar.';
     $('reference-stats').textContent='Cadastre a referência para comparar cada anúncio ao seu recorte.';
     return;
   }
   const r=referenceProfile;
-  summary.textContent=r.name+' · '+referenceTitle(r)+' · '+r.city+'/'+r.state+
+  const isLand=['land','farm'].includes(r.type);
+  const missingMain=(isLand?r.total:r.usable)===null;
+  summary.className=missingMain?'reference-warning':'';
+  summary.textContent=(missingMain?'⚠️ Falta a '+(isLand?'área do terreno':'área útil / privativa')+' para comparar. Preencha acima e salve novamente. · ':'Imóvel cadastrado · ')+
+    r.name+' · '+referenceTitle(r)+' · '+r.city+'/'+r.state+
     (r.neighborhood?' · '+r.neighborhood:'')+
     ' · '+(r.type==='land'||r.type==='farm'?'Terreno: '+(r.total??'não informado'):'Área útil: '+(r.usable??'não informada'))+' m²'+
     ' · tolerância: ±'+r.tolerance+'%.';
@@ -352,11 +407,13 @@ function showReference(){
 $('reference-save').onclick=()=>{
   try{
     referenceProfile=makeReference(readReferenceFields());
-    showReference();
+    showReference();syncReferenceFields();
     // Exibir a referência mesmo quando estiver fora da cidade padrão do mapa.
     if(map&&referenceProfile.lat!==null)map.setView([referenceProfile.lat,referenceProfile.lng],12);
     drawMap(false);refresh();
-    report('Imóvel de referência atualizado. A compatibilidade é uma triagem de características, não uma avaliação de mercado.');
+    const essential=['land','farm'].includes(referenceProfile.type)?referenceProfile.total:referenceProfile.usable;
+    report(essential===null?'Imóvel salvo parcialmente: informe a metragem principal para que o sistema consiga comparar as áreas.':
+      'Imóvel salvo. Agora importe anúncios e escolha quais deseja comparar; isto ainda não é uma avaliação de mercado.',essential===null);
   }catch(e){report(e.message||'Dados inválidos do imóvel de referência.',true);}
 };
 $('reference-clear').onclick=()=>{
@@ -365,6 +422,7 @@ $('reference-clear').onclick=()=>{
   report('Imóvel de referência removido. Anúncios e seleção foram preservados.');
 };
 $('ref-type').addEventListener('change',syncReferenceFields);
+for(const id of ['ref-usable','ref-total'])$(id).addEventListener('input',syncReferenceFields);
 syncReferenceFields();
 showReference();
 
@@ -505,7 +563,7 @@ function renderComparison() {
     '<p class="hint">Triagem preliminar: '+safe(cautions.join(' ')||'Campos essenciais presentes; confirme os anúncios, localização e homogeneidade.')+
     ' Preços anunciados não representam preços efetivos de venda. Nenhuma avaliação ou PTAM é calculado.</p>';
 }
-function refresh(){renderCards();renderComparison();}
+function refresh(){renderCards();renderComparison();renderGuidedSummary();}
 function loadNormalized(items,total=null,detailed=false){
   const known=new Map(records.map((x,i)=>[x.key,i]));
   for (const p of items) {
@@ -825,4 +883,7 @@ $('export-btn').onclick=()=>{
   const object=URL.createObjectURL(new Blob(['\ufeff'+cells],{type:'text/csv;charset=utf-8'}));
   const a=document.createElement('a');a.href=object;a.download='comparaveis-imovel-busca.csv';a.click();setTimeout(()=>URL.revokeObjectURL(object),1200);
 };
+$('map-extra').addEventListener('toggle',()=>{
+  if(map){map.invalidateSize();drawMap(false);}
+});
 refresh();

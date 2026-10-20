@@ -6,16 +6,88 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
 :root{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:#1d2e46;background:#f4f6fa}*{box-sizing:border-box}body{margin:0}button,input,select,textarea{font:inherit}button{cursor:pointer;border:0;border-radius:11px;font-weight:700;padding:11px 16px}button:disabled{opacity:.5;cursor:not-allowed}a{color:#d44c30}header{background:#fff;border-bottom:1px solid #e2e8f0}.top{max-width:1400px;margin:auto;padding:18px 22px;display:flex;align-items:center;justify-content:space-between;gap:14px}.logo{font-size:22px;font-weight:850;letter-spacing:-.75px;color:#102139}.logo b{color:#ee5b38}small{color:#7a8595}.eyebrow{color:#bd4e32;background:#fff1ed;border:1px solid #f9d9cb;font-size:11px;font-weight:800;padding:7px 10px;border-radius:999px;text-align:center}main{max-width:1400px;margin:auto;padding:22px}.intro{color:#65758a;font-size:13px;margin:0 0 15px}.tabs{display:flex;gap:9px;margin-bottom:14px;flex-wrap:wrap}.tab{background:#e8ecf4;color:#566479}.tab.active{background:#14233a;color:#fff}.panel{background:#fff;border:1px solid #e4e9f2;box-shadow:0 3px 16px #11213909;border-radius:18px;padding:16px}.hidden{display:none!important}.grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;align-items:end}.field{display:grid;gap:7px;font-size:12px;color:#62718a;font-weight:750}.field input,.field select,textarea{width:100%;border:1px solid #dbe2ec;border-radius:10px;padding:11px;background:#fff;color:#1c2d42;min-width:0}.field input:focus,.field select:focus,textarea:focus{outline:2px solid #ffc7b7;border-color:#e65c41}.span2{grid-column:span 2}.span3{grid-column:span 3}textarea{width:100%;height:170px;font:12px/1.5 ui-monospace,Consolas,monospace}.primary{background:#ed5537;color:white}.secondary{background:#f1f4f8;color:#273e58;border:1px solid #e1e6ee}.controls{display:flex;gap:9px;flex-wrap:wrap;align-items:center}.notice{font-size:12px;color:#6a788c;line-height:1.5}.status{margin:15px 0;padding:13px 15px;color:#54667b;border:1px solid #dce4f0;background:#f7faff;border-radius:13px;font-size:13px}.status.error{color:#9e2830;background:#fff3f3;border-color:#f5cccc}.summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:17px}.stat{background:#fff;padding:12px 15px;border:1px solid #e4e9f2;border-radius:14px;font-size:12px;color:#64748b}.stat strong{display:block;font-size:23px;color:#16263e;line-height:1.3}.workspace{display:grid;grid-template-columns:minmax(0,1fr) minmax(310px,.85fr);gap:15px}.map-head{display:flex;justify-content:space-between;align-items:center;gap:15px;margin:0 2px 14px}.map-head h2,.panel h2{font-size:16px;margin:0}.range{display:flex;align-items:center;gap:10px;font-size:12px;color:#56677d;font-weight:650}.range input{width:140px;accent-color:#e85536}#map{height:550px;border-radius:13px;background:#e8eff5;z-index:0}.hint{color:#788497;font-size:12px;line-height:1.55;margin:11px 0 0}.pin{display:grid;place-items:center;color:#fff;font-weight:900;font-size:11px;background:#e95438;border-radius:50%;width:30px;height:30px;border:2px solid white;box-shadow:0 3px 8px #0005}.pin.approx{background:#667f9e;border-style:dashed}.pin.center{background:#172940;font-size:16px}.pin.reference{background:#148478;font-size:14px;border-radius:8px}.reference-panel{margin-bottom:17px}.reference-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}.reference-form{margin-top:14px}.reference-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:13px}.reference-status{background:#f7fafc;border:1px solid #e1e8ef;border-radius:11px;padding:10px 12px;margin-top:13px;font-size:12px;line-height:1.6;color:#475970}.reference-result{display:grid;gap:6px;padding:9px 10px;border:1px solid #e8edf1;border-radius:10px;background:#fbfcff;font-size:12px}.reference-extra{margin-top:12px}.reference-extra summary{font-size:12px;font-weight:750;cursor:pointer;color:#3d5b78}.leaflet-div-icon{border:0;background:none}.detail{background:#fff4ed;color:#bc5130;border:1px solid #f5d5c9;font-size:11px;font-weight:750;border-radius:8px;padding:7px 10px}.smallnote{font-size:11px;color:#8c6a46}.result-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}.result-scroll{max-height:580px;overflow:auto;display:grid;gap:10px}.listing{display:grid;gap:9px;border:1px solid #e3e8f1;border-radius:13px;padding:13px}.listing.selected{background:#fff7f3;border-color:#f19f87}.listing h3{font-size:13px;line-height:1.4;margin:0}.price{font-size:20px;font-weight:850;color:#1b2c44}.row{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.between{justify-content:space-between}.pill{font-size:11px;border-radius:7px;padding:4px 7px;background:#edf1f8;color:#526681}.pill.orange{background:#fff1ea;color:#a9532b}.pill.quality-ok{background:#e8f5ec;color:#22683b}.pill.quality-warn{background:#fff3db;color:#86561a}.pill.quality-missing{background:#fde9e8;color:#992d35}.quality-reasons{display:grid;gap:3px;font-size:11px;color:#835b35;line-height:1.45}.quality-reasons span:before{content:"• "}.muted{font-size:12px;color:#697a90}.check{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer}.check input{width:17px;height:17px;accent-color:#e95438}.link{font-size:12px;text-decoration:none;font-weight:700}.link:hover{text-decoration:underline}.compare{margin-top:15px}.table-scroll{overflow:auto}.table-scroll table{min-width:650px;width:100%;border-collapse:collapse}th,td{font-size:12px;padding:12px 10px;text-align:left;vertical-align:top;border-bottom:1px solid #e8edf5;max-width:240px;word-break:break-word}th{color:#4e6078;background:#f8fafc}.foot{margin-top:16px;font-size:12px;color:#77869a;line-height:1.65}.filterline{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.filterline .field{min-width:85px}label.inline{display:flex;gap:8px;align-items:center;cursor:pointer}label.inline input{width:auto}#info{font-size:12px;color:#64748b}@media(max-width:900px){.workspace{grid-template-columns:1fr}.result-scroll{max-height:430px}#map{height:380px}}@media(max-width:620px){.top{padding:16px;align-items:flex-start}.logo{font-size:19px}main{padding:14px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.span2,.span3{grid-column:span 2}.summary{grid-template-columns:repeat(2,minmax(0,1fr))}.map-head{align-items:flex-start;flex-direction:column}.range{width:100%}.range input{flex:1}#map{height:340px}.panel{padding:13px}.eyebrow{font-size:9px}}
-</style></head>
+ 
+.step-heading{margin:22px 0 12px}.step-heading h2{font-size:17px;color:#142c49;margin:0}
+.reference-panel{border-left:4px solid #167e80}.reference-panel .reference-form{grid-template-columns:repeat(6,minmax(0,1fr))}
+.import-primary{align-items:end}.guided-panel{margin:18px 0 14px;border-left:4px solid #ed5537}.guided-head{display:flex;gap:12px;justify-content:space-between;align-items:start;flex-wrap:wrap}.guided-head h2{font-size:17px;margin:0}.guided-summary{margin-top:15px;display:grid;gap:12px}.guide-next{background:#f5f8fc;border-radius:12px;padding:14px;font-size:13px;line-height:1.6;color:#28415f}.guide-next.important{background:#fff5ec;border:1px solid #f3d6bd}.guide-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:12px 0;border-bottom:1px solid #e6ecf3}.guide-row:last-child{border:0}.guide-name{font-size:13px;font-weight:800;color:#203653}.guide-price{font-size:15px;font-weight:850;color:#243d56;white-space:nowrap}.guide-reason{font-size:12px;color:#74604a;line-height:1.5;margin:7px 0 0}.guide-meta{font-size:11px;color:#66798b}.guided-workspace{display:block}.guided-workspace>.panel{width:100%}.advanced-filters{margin-bottom:12px}.technical-panel{margin:13px 0;border:1px solid #dfe6ee;border-radius:14px;padding:12px 15px;background:#fff}.technical-panel>summary,.reference-extra>summary{font-weight:750;cursor:pointer;font-size:13px;color:#39546b;line-height:1.5}.technical-panel .summary{margin-top:12px}.map-collapsible .panel{border:0;box-shadow:none;padding:12px 0 0}.map-collapsible #map{height:410px}.reference-extra .grid{margin-top:12px}.guided-workspace .result-scroll{max-height:620px;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}.guided-workspace .result-scroll .listing{min-width:0}.reference-panel .reference-status strong{font-weight:650}.advanced-filters .grid{margin-bottom:12px}
+@media(max-width:780px){.guided-workspace .result-scroll{grid-template-columns:1fr}.guide-row{grid-template-columns:1fr}.guide-price{white-space:normal}}
+@media(max-width:620px){.guided-head button{width:100%}.reference-panel .reference-form{grid-template-columns:repeat(2,minmax(0,1fr))}.import-primary{display:grid}.import-primary button{width:100%}.guide-next{padding:12px}}
+ .reference-warning{color:#994519;font-weight:800}.main-area-required{border:2px solid #f0a979!important;background:#fffaf6!important}.advanced-filters[open]{padding-bottom:10px}.guided-summary .guide-row .pill{display:inline-flex}</style></head>
 <body>
 <header><div class="top"><div><div class="logo">⌖ Imóvel <b>Busca</b></div><small>Laboratório independente de pesquisa e comparação</small></div><span class="eyebrow">AMBIENTE EXPERIMENTAL</span></div></header>
 <main>
-<p class="intro">Compare anúncios reais obtidos em consultas autorizadas. Nenhuma informação é enviada ao Web Imóveis e nenhum preço de avaliação é calculado.</p>
-<div class="tabs"><button class="tab active" id="tab-import">Importar JSON</button><button class="tab" id="tab-api">Consultar GeckoAPI</button></div>
+<p class="intro">Escolha o imóvel, compare anúncios semelhantes e entenda quais podem servir de referência. <strong>O laboratório ainda não calcula valor de mercado nem emite laudo.</strong></p>
+<section class="panel reference-panel" id="reference-panel" aria-labelledby="reference-heading">
+  <div class="reference-head">
+    <div><h2 id="reference-heading">1. Descreva o imóvel que você quer avaliar</h2>
+      <p class="hint">Informe primeiro o tipo, a cidade e a metragem. Você poderá acrescentar detalhes depois. <strong>Sem a metragem principal, não é possível comparar os tamanhos.</strong></p>
+    </div>
+    <span class="eyebrow">ETAPA 1 DE 3</span>
+  </div>
+  <div class="grid reference-form">
+    <label class="field span2">Nome para identificar o imóvel (opcional)<input id="ref-name" maxlength="120" placeholder="Ex.: imóvel da avaliação"></label>
+    <label class="field span2">Tipo do imóvel<select id="ref-type">
+      <option value="">Selecione um tipo</option>
+      <option value="house">Casa</option><option value="two_story_house">Sobrado</option>
+      <option value="apartment">Apartamento</option><option value="flat">Flat</option>
+      <option value="kitnet">Kitnet / studio</option><option value="penthouse">Cobertura</option>
+      <option value="condominium">Imóvel em condomínio (confirmar subtipo)</option>
+      <option value="land">Terreno / lote</option><option value="farm">Chácara / sítio / fazenda</option>
+      <option value="commercial_room">Sala comercial</option><option value="warehouse">Galpão</option>
+      <option value="commercial_point">Ponto comercial</option>
+      <option value="other">Outro tipo (descrever)</option>
+    </select></label>
+    <label class="field span2 hidden" id="ref-custom-wrap">Descrição da outra tipologia<input id="ref-custom-type" maxlength="100" placeholder="Ex.: clínica, pousada, unidade industrial"></label>
+    <label class="field">Cidade<input id="ref-city" maxlength="100" placeholder="Ex.: Salto de Pirapora"></label>
+    <label class="field">UF<input id="ref-state" maxlength="2" placeholder="SP"></label>
+    <label class="field span2">Bairro (opcional)<input id="ref-neighborhood" maxlength="120" placeholder="Ex.: Centro"></label>
+    <label class="field">Área útil / privativa (m²) — para casas e apartamentos<input id="ref-usable" type="number" min="0" step="any" placeholder="Ex.: 120"></label>
+    
+    <label class="field">Área do terreno (m²) — para terrenos e chácaras<input id="ref-total" type="number" min="0" step="any" placeholder="Ex.: 250"></label>
+    <label class="field">Dormitórios (opcional)<input id="ref-beds" type="number" min="0" step="1" placeholder="Não informado"></label>
+    
+    
+    
+    
+  </div>
+  <p id="ref-area-hint" class="hint">A área usada na triagem depende da tipologia.</p>
+<details class="reference-extra"><summary>Adicionar mais características (suítes, vagas, banheiros, área construída e tolerância)</summary><div class="grid" style="margin-top:12px"><label class="field">Área construída (m²)<input id="ref-built" type="number" min="0" step="any" placeholder="Não substituir pela útil"></label>
+<label class="field">Suítes (opcional)<input id="ref-suites" type="number" min="0" step="1" placeholder="Não informado"></label>
+<label class="field">Banheiros (opcional)<input id="ref-baths" type="number" min="0" step="1" placeholder="Não informado"></label>
+<label class="field">Vagas (opcional)<input id="ref-spaces" type="number" min="0" step="1" placeholder="Não informado"></label>
+<label class="field">Faixa de área ± (%)<input id="ref-tolerance" type="number" min="5" max="50" step="1" value="20"></label></div></details>
+  <details class="reference-extra">
+    <summary>Coordenadas e raio no mapa (opcional / avançado)</summary>
+    <div class="grid" style="margin-top:12px">
+      <label class="field span2">Latitude<input id="ref-lat" type="number" step="any" min="-90" max="90" placeholder="Ex.: -23.65"></label>
+      <label class="field span2">Longitude<input id="ref-lng" type="number" step="any" min="-180" max="180" placeholder="Ex.: -47.58"></label>
+      <label class="field span2">Raio máximo de conferência (km)<input id="ref-radius" type="number" min="0" step="any" placeholder="Sem limite geográfico"></label>
+    </div>
+    <p class="hint">Só use coordenadas realmente conhecidas do imóvel. O marcador identificado por R representa a referência; o círculo do mapa tem centro e raio independentes. Anúncios sem coordenadas não passam por verificação automática de distância.</p>
+  </details>
+  <div class="reference-actions">
+    <button class="primary" id="reference-save" type="button">Salvar meu imóvel</button>
+    <button class="secondary" id="reference-clear" type="button">Remover meu imóvel</button>
+    <span class="muted">Nenhuma informação é enviada ao Web Imóveis.</span>
+  </div>
+  <div class="reference-status" aria-live="polite">
+    <div id="ref-summary">Nenhum imóvel de referência cadastrado.</div>
+    <strong id="reference-stats">Cadastre a referência para comparar cada anúncio ao seu recorte.</strong>
+  </div>
+</section>
+<div class="step-heading"><h2>2. Adicione anúncios semelhantes</h2><p class="hint">Já tem um CSV exportado? Importe-o aqui, sem gastar créditos. Também é possível pesquisar novos anúncios pela API.</p></div>
+<div class="tabs"><button class="tab active" id="tab-import">Importar arquivo</button><button class="tab" id="tab-api">Buscar pela GeckoAPI (avançado)</button></div>
 <section class="panel" id="import-panel">
-<label class="field">Cole aqui a resposta JSON da GeckoAPI (PLP ou PDP)<textarea id="json-input" placeholder='{"data":{"source":"zapimoveis.com.br","items":[...]}}'></textarea></label>
-<div class="controls" style="margin-top:12px"><button class="primary" id="import-btn">Importar JSON</button><label class="field" style="min-width:220px">Ou selecione um CSV exportado anteriormente<input id="csv-file" type="file" accept=".csv,text/csv"></label><button class="secondary" id="csv-import-btn">Importar CSV</button><button class="secondary" id="clear-btn">Limpar sessão</button></div>
-<p class="hint">A importação de JSON e CSV funciona no navegador, sem gastar créditos da GeckoAPI. CSVs antigos sem coluna de tipo são aceitos quando a tipologia puder ser recuperada do anúncio; dados não identificados ficam sinalizados.</p>
+  <div class="controls import-primary">
+    <label class="field" style="min-width:220px;flex:1"><strong>Selecione seu arquivo CSV</strong><input id="csv-file" type="file" accept=".csv,text/csv"></label>
+    <button class="primary" id="csv-import-btn">Importar meus anúncios</button>
+    <button class="secondary" id="clear-btn">Limpar anúncios da sessão</button>
+  </div>
+  <p class="hint">O CSV é lido no próprio navegador. Os anúncios importados aparecem abaixo para você selecionar e comparar.</p>
+  <details class="reference-extra"><summary>Tenho uma resposta JSON da GeckoAPI (opção técnica)</summary>
+    <label class="field" style="margin-top:12px">Cole a resposta JSON da GeckoAPI (PLP/PDP)<textarea id="json-input" placeholder='{"data":{"source":"zapimoveis.com.br","items":[...]}}'></textarea></label>
+    <div class="controls" style="margin-top:10px"><button class="secondary" id="import-btn">Importar JSON</button></div>
+  </details>
 </section>
 <section class="panel hidden" id="api-panel">
 <div class="grid">
@@ -50,77 +122,33 @@
 </div>
 <p class="hint">Consulta real pode consumir créditos. A chave GeckoAPI fica no servidor, nunca no navegador. Não informe sua chave privada no campo de código de acesso.</p>
 </section>
-<div id="status" class="status" role="status" aria-live="polite">Cole o JSON da sua pesquisa ou configure o token na Vercel para consultar diretamente.</div>
+<div id="status" class="status" role="status" aria-live="polite">Comece cadastrando o imóvel na etapa 1. Depois importe seus anúncios e veja o resumo da comparação.</div>
+
+<details class="technical-panel" id="technical-status"><summary>Detalhes técnicos da importação e indicadores</summary>
 <div id="location-audit" class="status hidden" role="status" aria-live="polite"></div>
 <div id="origin-audit" class="status hidden" role="status" aria-live="polite">
   <strong>URL consultada pela GeckoAPI:</strong>
   <a id="origin-url" target="_blank" rel="noopener noreferrer">Abrir pesquisa na OLX ↗</a>
   <p id="origin-analysis" class="hint"></p>
 </div>
-<div class="summary"><div class="stat"><strong id="loaded">0</strong>Anúncios carregados</div><div class="stat"><strong id="total">—</strong>Total informado pela fonte</div><div class="stat"><strong id="mapped">0</strong>Com coordenadas</div><div class="stat"><strong id="picked">0</strong>Selecionados</div><div class="stat"><strong id="complete">0</strong>Dados essenciais completos</div><div class="stat"><strong id="needs-review">0</strong>Requerem conferência ou estão incompletos</div></div>
+<div class="summary"><div class="stat"><strong id="loaded">0</strong>Anúncios carregados</div><div class="stat"><strong id="total">—</strong>Total informado pela fonte</div><div class="stat"><strong id="mapped">0</strong>Com coordenadas</div><div class="stat"><strong id="picked">0</strong>Selecionados</div><div class="stat"><strong id="complete">0</strong>Dados essenciais completos</div><div class="stat"><strong id="needs-review">0</strong>Requerem conferência ou estão incompletos</div></div></details>
 
-<section class="panel reference-panel" id="reference-panel" aria-labelledby="reference-heading">
-  <div class="reference-head">
-    <div><h2 id="reference-heading">Imóvel de referência</h2>
-      <p class="hint">Cadastre qualquer tipologia antes ou depois de importar anúncios. A semelhança considera apenas os atributos informados; não é laudo, PTAM ou estimativa de preço.</p>
-    </div>
-    <span class="eyebrow">TRIAGEM EXPERIMENTAL</span>
-  </div>
-  <div class="grid reference-form">
-    <label class="field span2">Identificação opcional<input id="ref-name" maxlength="120" placeholder="Ex.: imóvel da avaliação"></label>
-    <label class="field span2">Tipologia do imóvel<select id="ref-type">
-      <option value="">Selecione um tipo</option>
-      <option value="house">Casa</option><option value="two_story_house">Sobrado</option>
-      <option value="apartment">Apartamento</option><option value="flat">Flat</option>
-      <option value="kitnet">Kitnet / studio</option><option value="penthouse">Cobertura</option>
-      <option value="condominium">Imóvel em condomínio (confirmar subtipo)</option>
-      <option value="land">Terreno / lote</option><option value="farm">Chácara / sítio / fazenda</option>
-      <option value="commercial_room">Sala comercial</option><option value="warehouse">Galpão</option>
-      <option value="commercial_point">Ponto comercial</option>
-      <option value="other">Outro tipo (descrever)</option>
-    </select></label>
-    <label class="field span2 hidden" id="ref-custom-wrap">Descrição da outra tipologia<input id="ref-custom-type" maxlength="100" placeholder="Ex.: clínica, pousada, unidade industrial"></label>
-    <label class="field">Cidade<input id="ref-city" maxlength="100" placeholder="Ex.: Salto de Pirapora"></label>
-    <label class="field">UF<input id="ref-state" maxlength="2" placeholder="SP"></label>
-    <label class="field span2">Bairro (opcional)<input id="ref-neighborhood" maxlength="120" placeholder="Ex.: Centro"></label>
-    <label class="field">Área útil / privativa (m²)<input id="ref-usable" type="number" min="0" step="any" placeholder="Ex.: 120"></label>
-    <label class="field">Área construída (m²)<input id="ref-built" type="number" min="0" step="any" placeholder="Não substituir pela útil"></label>
-    <label class="field">Área total / terreno (m²)<input id="ref-total" type="number" min="0" step="any" placeholder="Ex.: 250"></label>
-    <label class="field">Dormitórios (opcional)<input id="ref-beds" type="number" min="0" step="1" placeholder="Não informado"></label>
-    <label class="field">Suítes (opcional)<input id="ref-suites" type="number" min="0" step="1" placeholder="Não informado"></label>
-    <label class="field">Banheiros (opcional)<input id="ref-baths" type="number" min="0" step="1" placeholder="Não informado"></label>
-    <label class="field">Vagas (opcional)<input id="ref-spaces" type="number" min="0" step="1" placeholder="Não informado"></label>
-    <label class="field">Faixa de área ± (%)<input id="ref-tolerance" type="number" min="5" max="50" step="1" value="20"></label>
-  </div>
-  <p id="ref-area-hint" class="hint">A área usada na triagem depende da tipologia.</p>
-  <details class="reference-extra">
-    <summary>Localização por coordenadas (opcional)</summary>
-    <div class="grid" style="margin-top:12px">
-      <label class="field span2">Latitude<input id="ref-lat" type="number" step="any" min="-90" max="90" placeholder="Ex.: -23.65"></label>
-      <label class="field span2">Longitude<input id="ref-lng" type="number" step="any" min="-180" max="180" placeholder="Ex.: -47.58"></label>
-      <label class="field span2">Raio máximo de conferência (km)<input id="ref-radius" type="number" min="0" step="any" placeholder="Sem limite geográfico"></label>
-    </div>
-    <p class="hint">Só use coordenadas realmente conhecidas do imóvel. O marcador identificado por R representa a referência; o círculo do mapa tem centro e raio independentes. Anúncios sem coordenadas não passam por verificação automática de distância.</p>
-  </details>
-  <div class="reference-actions">
-    <button class="primary" id="reference-save" type="button">Salvar imóvel de referência</button>
-    <button class="secondary" id="reference-clear" type="button">Limpar referência</button>
-    <span class="muted">Informações guardadas apenas nesta sessão do navegador.</span>
-  </div>
-  <div class="reference-status" aria-live="polite">
-    <div id="ref-summary">Nenhum imóvel de referência cadastrado.</div>
-    <strong id="reference-stats">Cadastre a referência para comparar cada anúncio ao seu recorte.</strong>
-  </div>
-</section>
 
-<div class="workspace">
-<section class="panel">
-<div class="map-head"><h2>Mapa dos comparáveis</h2><div class="range"><span>Raio:</span><input type="range" id="radius" min="1" max="50" value="5"><strong id="radius-label">5 km</strong></div></div>
-<div id="map" aria-label="Mapa interativo com anúncios e raio de comparação"></div>
-<p class="hint">Arraste o pino escuro para mover o centro do círculo ou ajuste o raio no controle acima. A busca geográfica da GeckoAPI, quando disponível, usa raio fixo de 2 km; o raio visual é independente. Marcadores cinza indicam posição aproximada.</p>
+
+
+<section class="panel guided-panel" id="guided-panel" aria-labelledby="guided-title">
+  <div class="guided-head">
+    <div><h2 id="guided-title">3. Entenda sua comparação</h2>
+      <p class="hint">Veja primeiro o que está faltando e quais anúncios merecem uma revisão. A tabela completa é opcional.</p>
+    </div>
+    <button class="primary" id="export-btn" disabled>Exportar anúncios escolhidos</button>
+  </div>
+  <div id="guided-summary" class="guided-summary" aria-live="polite">Salve seu imóvel de referência para começar.</div>
 </section>
+<div class="workspace guided-workspace">
 <section class="panel">
-<div class="result-head"><h2>Anúncios disponíveis</h2><label class="inline muted"><input id="in-radius" type="checkbox"> Somente no raio</label></div>
+<div class="result-head"><h2>Escolha os anúncios que deseja comparar</h2><label class="inline muted"><input id="in-radius" type="checkbox"> Somente no raio</label></div>
+<details class="reference-extra advanced-filters"><summary>Filtrar anúncios por bairro, tipo, faixa de preço e outras características (opcional)</summary>
 <div class="filterline" style="margin-bottom:12px"><label class="field">Dormitórios mínimos<input id="min-beds" type="number" min="0" max="20" value="0"></label><label class="inline muted"><input id="dedupe" type="checkbox" checked> Sinalizar possíveis duplicidades</label></div>
 <div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:12px;gap:9px">
 <label class="field">Tipo exibido<select id="result-type"><option value="">Todos</option><option value="house">Casas</option><option value="two_story_house">Sobrados</option><option value="condominium">Imóveis em condomínio</option><option value="apartment">Apartamentos</option><option value="flat">Flats</option><option value="kitnet">Kitnets / studios</option><option value="land">Terrenos</option><option value="farm">Chácaras/sítios</option><option value="penthouse">Coberturas</option><option value="commercial_room">Salas comerciais</option><option value="warehouse">Galpões</option><option value="commercial_point">Pontos comerciais</option><option value="unknown">Não identificados</option></select></label>
@@ -135,11 +163,17 @@
 <label class="field">Mínimo de banheiros<input id="filter-bathrooms-min" type="number" min="0" max="20" placeholder="Sem mínimo"></label>
 <label class="field">Mínimo de vagas<input id="filter-parking-min" type="number" min="0" max="20" placeholder="Sem mínimo"></label>
 </div>
-<p class="hint">Filtros de metragem usam área total para terrenos e imóveis rurais e área útil para os demais. Anúncios sem essa área são excluídos apenas quando o filtro de metragem está ativo.</p><p id="filter-status" class="muted" style="margin:0 0 12px"></p>
+<p class="hint">Filtros de metragem usam área total para terrenos e imóveis rurais e área útil para os demais. Anúncios sem essa área são excluídos apenas quando o filtro de metragem está ativo.</p></details>
+<p id="filter-status" class="muted" style="margin:0 0 12px"></p>
 <div class="result-scroll" id="results"><p class="muted">Os resultados aparecerão aqui.</p></div>
 </section>
+<details class="technical-panel map-collapsible" id="map-extra"><summary>Ver mapa e distância entre imóveis (opcional)</summary><section class="panel">
+<div class="map-head"><h2>Mapa dos comparáveis</h2><div class="range"><span>Raio:</span><input type="range" id="radius" min="1" max="50" value="5"><strong id="radius-label">5 km</strong></div></div>
+<div id="map" aria-label="Mapa interativo com anúncios e raio de comparação"></div>
+<p class="hint">Arraste o pino escuro para mover o centro do círculo ou ajuste o raio no controle acima. A busca geográfica da GeckoAPI, quando disponível, usa raio fixo de 2 km; o raio visual é independente. Marcadores cinza indicam posição aproximada.</p>
+</section></details>
 </div>
-<section class="panel compare"><div class="row between" style="margin-bottom:12px"><div><h2>Comparador</h2><p class="hint">Selecione pelo menos 2 anúncios. A triagem verifica campos informados e semelhança preliminar; não comprova comparabilidade ou veracidade. Preços pedidos não são preços de venda.</p></div><button class="secondary" id="export-btn" disabled>Exportar CSV</button></div><div class="table-scroll" id="comparison">Nenhum anúncio selecionado.</div></section>
+<details class="technical-panel compare" id="comparison-extra"><summary>Ver tabela completa dos anúncios selecionados (opcional)</summary><div class="row between" style="margin-bottom:12px"><div><h2>Comparação detalhada</h2><p class="hint">Selecione pelo menos 2 anúncios. A triagem verifica campos informados e semelhança preliminar; não comprova comparabilidade ou veracidade. Preços pedidos não são preços de venda.</p></div></div><div class="table-scroll" id="comparison">Nenhum anúncio selecionado.</div></details>
 <p class="foot">Laboratório de testes. Não é PTAM nem laudo. Dados e geolocalização sujeitos a revisão e direitos de uso dos portais. O acesso à API exige código de laboratório e token do fornecedor configurados no servidor.</p>
 </main>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script type="module" src="/app.js"></script>

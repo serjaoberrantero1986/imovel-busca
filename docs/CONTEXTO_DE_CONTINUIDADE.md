@@ -143,3 +143,13 @@ Implementação no laboratório independente, branch `feat/referencia-multitipol
 - Cadastro efêmero na aba; sem Supabase e sem persistência, sem uso de créditos GeckoAPI. Não alterar `imovel-hub` sem autorização específica.
 
 **Limites**: conferir finalidade da oferta (venda/locação), situação de mercado, conservação, documentação, recorte temporal, amostragem e direitos de dados antes de transformar essa triagem em avaliação. Não chamar `compatible` de comparável aprovado ou gerar PTAM sem metodologia e responsabilidade técnica.
+
+## 10. Simplificação guiada — feedback do usuário em 2026-10-19
+
+Após cadastrar `Casa Ana Guilherme` e exportar três anúncios selecionados, o usuário relatou que a interface estava cheia de informações e que não entendia como analisar o imóvel.
+
+**Evidência concreta do CSV enviado no chat:** os três anúncios selecionados são casas em Salto de Pirapora/SP; valores anunciados R$ 240.000 (119 m² úteis, 2 dormitórios), R$ 270.000 (100 m² úteis, 2 dormitórios) e R$ 385.000 (120 m² úteis, 3 dormitórios). A referência foi cadastrada com 3 dormitórios, 1 suíte, 2 banheiros, 2 vagas e **sem `ref_area_m2`**. Os três `ref_status` eram `insufficient` devido à falta da área útil do imóvel de referência. A diferença de dormitórios, suítes, banheiros e vagas permanecia como motivo de revisão. Os preços pedidos não sustentam avaliação financeira.
+
+**Alteração:** reorganizar laboratório em três etapas visíveis — (1) cadastrar referência com destaque à metragem principal; (2) importar CSV por padrão, com JSON/API como opção técnica; (3) ler orientação e resumo legível dos anúncios escolhidos. Mapa, filtros extensos, auditoria e tabela detalhada continuam acessíveis, porém recolhidos por padrão. Aviso claro sobre área ausente, sem gerar preços artificiais. Documentação e testes verificam que IDs funcionais não foram perdidos.
+
+**Restrições:** mudar somente `imovel-busca`. Não consultar GeckoAPI com créditos e não editar `imovel-hub`. As melhorias devem ser validadas no CI e na Vercel.
