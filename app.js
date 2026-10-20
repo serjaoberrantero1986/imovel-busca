@@ -210,7 +210,7 @@ function makeReference(input){
   if(coords[0]!==null&&(!Number.isFinite(coords[0])||!Number.isFinite(coords[1])||Math.abs(coords[0])>90||Math.abs(coords[1])>180||(coords[0]===0&&coords[1]===0)))
     throw Error('As coordenadas do imóvel de referência são inválidas.');
   const tolerance=optionalReferenceNumber(input.tolerance??20,'Tolerância de área',{max:50});
-  if(tolerance<5||tolerance>50)throw Error('A tolerância de área deve ser entre 5% e 50%.');
+  if(tolerance===null||tolerance<5||tolerance>50)throw Error('A tolerância de área deve ser entre 5% e 50%.');
   const radius=optionalReferenceNumber(input.radius,'Raio máximo',{max:1000});
   if(radius!==null&&coords[0]===null)throw Error('Informe coordenadas conhecidas para utilizar o raio geográfico.');
   return {
@@ -353,10 +353,13 @@ function visibleRecords(){
   const minBaths=valueOf('filter-bathrooms-min'),minSpaces=valueOf('filter-parking-min');
   const onlyRadius=$('in-radius').checked,km=Number($('radius').value);
   const qualityFilter=$('quality-filter').value;
-  return records.filter(p=>{
+  const referenceFilter=referenceProfile?$('reference-filter').value:'';
+  const sortReference=referenceProfile&&$('reference-sort').value==='affinity';
+  const matching=records.filter(p=>{
     if(activeLocation&&(canon(p.city)!==activeLocation.city||canon(p.state)!==activeLocation.state))return false;
     if(type&&p.type!==type)return false;
     if(qualityFilter&&reviewComparable(p).status!==qualityFilter)return false;
+    if(referenceFilter&&assessReference(referenceProfile,p).status!==referenceFilter)return false;
     if(neigh&&!canon(p.neighborhood).includes(neigh))return false;
     if(minBeds&&(p.beds===null||p.beds<minBeds))return false;
     if(minBaths!==null&&(p.baths===null||p.baths<minBaths))return false;
@@ -368,6 +371,11 @@ function visibleRecords(){
     if(onlyRadius&&(!validPoint(p)||distance(center,p)>km))return false;
     return true;
   });
+  return sortReference?matching.sort((a,b)=>{
+    const ra=assessReference(referenceProfile,a),rb=assessReference(referenceProfile,b);
+    return referenceOrder[ra.status]-referenceOrder[rb.status]||
+      ra.issues.length-rb.issues.length||a.title.localeCompare(b.title,'pt-BR');
+  }):matching;
 }
 const pinIcon=(label,klass='')=>L.divIcon({html:'<span class="pin '+klass+'">'+safe(label)+'</span>',className:'',iconSize:[30,30],iconAnchor:[15,15]});
 function renderMarkers(){
@@ -382,6 +390,12 @@ function drawMap(recenter=false){
   if(!map)return;
   if(ring){map.removeLayer(ring);ring=null;}
   if(anchor){map.removeLayer(anchor);anchor=null;}
+  if(referenceMarker){map.removeLayer(referenceMarker);referenceMarker=null;}
+  if(referenceProfile&&referenceProfile.lat!==null){
+    referenceMarker=L.marker([referenceProfile.lat,referenceProfile.lng],{icon:pinIcon('R','reference')}).addTo(map);
+    referenceMarker.bindPopup('<strong>Imóvel de referência</strong><div>'+safe(referenceProfile.name)+'</div><small>'+
+      safe(referenceTitle(referenceProfile))+' · coordenada declarada pelo usuário</small>');
+  }
   const located=records.filter(validPoint);
   if((!center||recenter)&&located.length)center={lat:located.reduce((sum,p)=>sum+p.lat,0)/located.length,lng:located.reduce((sum,p)=>sum+p.lng,0)/located.length};
   if(center){
@@ -404,9 +418,16 @@ function renderCards() {
     const dis=distance(center,p), flag=$('dedupe').checked&&duplicate(p);
     const review=reviewComparable(p);
     const reviewClass=review.status==='complete'?'quality-ok':review.status==='review'?'quality-warn':'quality-missing';
+    const match=assessReference(referenceProfile,p);
+    const refClass=match?.status==='compatible'?'quality-ok':match?.status==='review'?'quality-warn':'quality-missing';
     card.innerHTML =
       '<div class="row between"><span class="pill">'+safe(p.source)+'</span><span class="muted">'+(validPoint(p)?(p.approx?'📍 Aproximada':'📍 Não certificada'):'Sem coordenadas')+'</span></div>'+
-      '<h3>'+safe(p.title)+'</h3><div class="row"><span class="pill orange">'+safe(typeLabel[p.type]||'A classificar')+'</span><span class="pill '+reviewClass+'">'+safe(qualityLabels[review.status])+'</span></div><div class="price">'+safe(money(p.price))+'</div>'+
+      '<h3>'+safe(p.title)+'</h3><div class="row"><span class="pill orange">'+safe(typeLabel[p.type]||'A classificar')+'</span><span class="pill '+reviewClass+'">'+safe(qualityLabels[review.status])+'</span></div>'+
+      (match?'<div class="reference-result"><span class="pill '+refClass+'">Referência: '+safe(referenceLabels[match.status])+'</span>'+
+        (match.distanceKm!==null?' <span class="muted">'+safe(match.distanceKm.toFixed(1))+' km do imóvel de referência</span>':'')+
+        (match.issues.length?'<div class="quality-reasons">'+match.issues.slice(0,4).map(issue=>'<span>'+safe(issue)+'</span>').join('')+'</div>':'')+
+        '</div>':'')+
+      '<div class="price">'+safe(money(p.price))+'</div>'+
       (review.unitPrice!==null?'<div class="muted">'+safe(money(review.unitPrice))+' / '+safe(review.unitAreaLabel)+' (preço pedido)</div>':'')+
       (review.issues.length?'<div class="quality-reasons">'+review.issues.map(x=>'<span>'+safe(x)+'</span>').join('')+'</div>':'')+
       '<div class="row"><span class="pill">'+safe(text(p.usable))+' m² úteis</span><span class="pill">'+safe(text(p.beds))+' dorm.</span><span class="pill">'+safe(text(p.suites))+' suítes</span><span class="pill">'+safe(text(p.baths))+' banh.</span><span class="pill">'+safe(text(p.spaces))+' vagas</span></div>'+
@@ -423,14 +444,23 @@ function renderCards() {
   $('loaded').textContent=records.length;$('total').textContent=reported??'—';$('mapped').textContent=records.filter(validPoint).length;$('picked').textContent=selected.size;
   $('complete').textContent=records.filter(p=>reviewComparable(p).status==='complete').length;
   $('needs-review').textContent=records.filter(p=>reviewComparable(p).status!=='complete').length;
+  if(referenceProfile){
+    const counts={compatible:0,review:0,insufficient:0,incompatible:0};
+    for(const p of records)counts[assessReference(referenceProfile,p).status]++;
+    $('reference-stats').textContent=
+      counts.compatible+' aderentes nos critérios conferidos · '+counts.review+' para revisar · '+
+      counts.insufficient+' comparações incompletas · '+counts.incompatible+' fora do recorte.';
+  }
   renderMarkers();
 }
 function renderComparison() {
   const arr=records.filter(p=>selected.has(p.key)), container=$('comparison');$('export-btn').disabled=arr.length<2;
   if(!arr.length){container.textContent='Selecione os anúncios na lista para comparar suas características.';return;}
-  const attrs=[['Fonte','source'],['Tipo de imóvel','type'],['Triagem dos dados','quality'],['Preço pedido','price'],['R$/m² da área de referência','unitPrice'],['Área útil','usable'],['Área total','total'],['Dormitórios','beds'],['Suítes','suites'],['Banheiros','baths'],['Vagas','spaces'],['Pavimentos','floors'],['Bairro','neighborhood'],['Anunciante','advertiser'],['Comodidades','amenities']];
+  const attrs=[['Fonte','source'],['Tipo de imóvel','type'],
+    ...(referenceProfile?[['Semelhança com imóvel de referência','referenceMatch']]:[]),
+    ['Triagem dos dados','quality'],['Preço pedido','price'],['R$/m² da área de referência','unitPrice'],['Área útil','usable'],['Área total','total'],['Dormitórios','beds'],['Suítes','suites'],['Banheiros','baths'],['Vagas','spaces'],['Pavimentos','floors'],['Bairro','neighborhood'],['Anunciante','advertiser'],['Comodidades','amenities']];
   let html='<table><thead><tr><th>Característica</th>'+arr.map(p=>'<th>'+safe(p.title.slice(0,70))+'</th>').join('')+'</tr></thead><tbody>';
-  for (const [label,key] of attrs) html+='<tr><th>'+safe(label)+'</th>'+arr.map(p=>'<td>'+safe(key==='quality'?qualityLabels[reviewComparable(p).status]:key==='unitPrice'?(reviewComparable(p).unitPrice===null?'—':money(reviewComparable(p).unitPrice)+' / '+reviewComparable(p).unitAreaLabel):key==='price'?money(p.price):key==='type'?(typeLabel[p.type]||'A classificar'):key==='amenities'?(p.amenities.join(', ')||'—'):text(p[key]))+'</td>').join('')+'</tr>';
+  for (const [label,key] of attrs) html+='<tr><th>'+safe(label)+'</th>'+arr.map(p=>'<td>'+safe(key==='referenceMatch'?referenceLabels[assessReference(referenceProfile,p).status]:key==='quality'?qualityLabels[reviewComparable(p).status]:key==='unitPrice'?(reviewComparable(p).unitPrice===null?'—':money(reviewComparable(p).unitPrice)+' / '+reviewComparable(p).unitAreaLabel):key==='price'?money(p.price):key==='type'?(typeLabel[p.type]||'A classificar'):key==='amenities'?(p.amenities.join(', ')||'—'):text(p[key]))+'</td>').join('')+'</tr>';
   const locations=new Set(arr.map(p=>canon(p.city)+'/'+canon(uf(p.state))));
   const types=new Set(arr.map(p=>p.type));
   const cautions=[];
@@ -439,6 +469,12 @@ function renderComparison() {
   if(locations.size>1)cautions.push('A seleção contém municípios diferentes.');
   if(types.size>1)cautions.push('A seleção mistura tipos de imóvel.');
   if(arr.some(p=>duplicate(p)))cautions.push('Há possíveis duplicidades na sessão.');
+  if(referenceProfile){
+    const checks=arr.map(p=>assessReference(referenceProfile,p));
+    if(checks.some(c=>c.status==='incompatible'))cautions.push('Alguns anúncios estão fora do recorte do imóvel de referência.');
+    if(checks.some(c=>c.status==='insufficient'))cautions.push('Algumas comparações têm dados essenciais ausentes.');
+    if(checks.some(c=>c.status==='review'))cautions.push('Existem diferenças relevantes a verificar frente à referência.');
+  }
   container.innerHTML=html+'</tbody></table>'+
     '<p class="hint">Triagem preliminar: '+safe(cautions.join(' ')||'Campos essenciais presentes; confirme os anúncios, localização e homogeneidade.')+
     ' Preços anunciados não representam preços efetivos de venda. Nenhuma avaliação ou PTAM é calculado.</p>';
@@ -732,7 +768,7 @@ async function fetchDetails(p,button){
   finally{button.disabled=false;}
 }
 $('radius').oninput=()=>{$('radius-label').textContent=$('radius').value+' km';if(ring)ring.setRadius(Number($('radius').value)*1000);refresh();};
-for(const id of ['in-radius','min-beds','dedupe','result-type','quality-filter','filter-neighborhood','filter-price-min','filter-price-max','filter-area-min','filter-area-max','filter-bathrooms-min','filter-parking-min']){
+for(const id of ['in-radius','min-beds','dedupe','result-type','quality-filter','reference-filter','reference-sort','filter-neighborhood','filter-price-min','filter-price-max','filter-area-min','filter-area-max','filter-bathrooms-min','filter-parking-min']){
   $(id).addEventListener('input',refresh);
   $(id).addEventListener('change',refresh);
 }
