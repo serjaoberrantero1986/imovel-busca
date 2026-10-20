@@ -303,3 +303,18 @@ test('Códigos estruturados de tipologia são respeitados',()=>{
  assert.equal(ctx.classify({propertyType:'two_story_house'}),'two_story_house');
  assert.equal(ctx.classify({propertyType:'condominium'}),'condominium');
 });
+
+test('Filtro local de área em terreno utiliza área total, nunca inventa área útil',()=>{
+ ctx.records.length=0;
+ const terrain=ctx.normalized({id:'area-land',unitTypes:['ALLOTMENT_LAND'],
+  prices:{mainValue:200000},attributes:{totalAreas:[250]},
+  address:{city:'Salto de Pirapora',state:'SP'}},'zapimoveis.com.br');
+ const house=ctx.normalized({id:'area-house',unitTypes:['HOME'],
+  prices:{mainValue:320000},attributes:{usableAreas:[90],totalAreas:[350]},
+  address:{city:'Salto de Pirapora',state:'SP'}},'zapimoveis.com.br');
+ ctx.loadNormalized([terrain,house]);
+ el('filter-area-min').value='200';
+ assert.deepEqual(Array.from(ctx.visibleRecords(),p=>p.id),['area-land']);
+ el('filter-area-min').value='';
+ ctx.records.length=0;
+});
