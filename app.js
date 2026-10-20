@@ -503,7 +503,7 @@ function guideAdvice(reference,items,chosen){
   const incompatible=reviewed.filter(x=>x.status==='incompatible').length;
   if(incompatible)return {level:'important',message:'Você selecionou '+chosen.length+' anúncios, mas '+incompatible+' estão fora do recorte de tipologia ou município. Considere substituí-los antes de aprofundar a comparação.'};
   if(missing)return {level:'important',message:'Você selecionou '+chosen.length+' anúncios. Em '+missing+' faltam dados para conferir a semelhança. Veja os motivos abaixo; mantenha apenas os anúncios que puder verificar.'};
-  return {level:'normal',message:'Você selecionou '+chosen.length+' anúncios. Confira as diferenças abaixo, abra os links originais e mantenha apenas imóveis realmente equivalentes. O sistema não calcula o valor de mercado.'};
+  return {level:'normal',message:'Você selecionou '+chosen.length+' anúncios. Confira o indicativo preliminar acima, veja as diferenças abaixo e valide os links originais antes de usar os dados numa avaliação.'};
 }
 function renderGuidedSummary(){
   const el=$('guided-summary');
@@ -532,7 +532,7 @@ function renderGuidedSummary(){
         '</div></div>';
     }
   }
-  html+='<p class="hint"><strong>Importante:</strong> este resultado serve para escolher e conferir comparáveis. Não calcula valor sugerido, preço negociado ou PTAM. Não transforme uma média de anúncios em avaliação sem metodologia técnica e validação das amostras.</p>';
+  html+='<p class="hint"><strong>Importante:</strong> este resultado serve para escolher e conferir comparáveis. O indicador acima utiliza somente preços anunciados por m², sem ajustes técnicos de características. Não representa valor de mercado concluído, preço negociado ou PTAM.</p>';
   el.innerHTML=html;
 }
 
