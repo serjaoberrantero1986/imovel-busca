@@ -754,10 +754,14 @@ function renderEligibility(stats,chosen){
       '</p></div><span class="status '+row.classification+'">'+eligibilityNames[row.classification]+'</span>'+
       '<div class="reason"><strong>Motivo:</strong> '+safe(row.reason)+
       (link?' · <a class="link" href="'+safe(link)+'" target="_blank" rel="noopener noreferrer">Ver anúncio original ↗</a>':'')+
-      '</div></div>';
+      ' · <button type="button" class="review-from-eligibility review-verify" data-review-key="'+
+      safe(encodeURIComponent(row.key))+'">Conferir dados</button></div></div>';
   }).join(''):'<p class="hint">Nenhum anúncio nesta categoria.</p>';
   const more=$('eligibility-more');
   more.classList.toggle('hidden',filtered.length<=eligibilityLimit);
+  list.querySelectorAll?.('.review-from-eligibility').forEach(button=>{
+    button.onclick=()=>openReview(decodeURIComponent(button.dataset.reviewKey||''));
+  });
 }
 $('eligibility-filter').addEventListener('change',()=>{
   eligibilityLimit=25;renderOfferIndicator();
@@ -1051,9 +1055,13 @@ function renderCards() {
       '<div class="muted">'+safe(p.neighborhood)+' · '+safe(p.city)+(dis!==null?' · '+dis.toFixed(1)+' km do centro':'')+'</div>'+
       (flag?'<span class="pill orange">Possível duplicidade — revisar</span>':'')+
       '<div class="row between"><label class="check"><input class="pick" type="checkbox" '+(selected.has(p.key)?'checked':'')+'> Comparar</label>'+(p.link?'<a class="link" target="_blank" rel="noopener noreferrer" href="'+safe(p.link)+'">Ver anúncio ↗</a>':'')+'</div>'+
+      '<button type="button" class="review-verify">Conferir/corrigir dados'+
+       ((p.reviewHistory||[]).length?' · '+p.reviewHistory.length+' alteração(ões)':'')+'</button>'+
       (p.link&&['zapimoveis.com.br','olx.com.br','imovelweb.com.br','vivareal.com.br','chavesnamao.com.br'].includes(p.source)?'<button class="detail" type="button">Buscar detalhes (PDP) · pode consumir créditos</button>':'')+
       (p.detailed?'<div class="pill orange">Dados adicionais consultados</div>':'');
     card.querySelector('.pick').onchange = event=>{if(event.target.checked)selected.add(p.key);else selected.delete(p.key);refresh();};
+    const reviewButton=card.querySelector('.review-verify');
+    if(reviewButton)reviewButton.onclick=()=>openReview(p.key);
     const details=card.querySelector('.detail');
     if(details)details.onclick=()=>fetchDetails(p,details);
     box.appendChild(card);
@@ -1112,6 +1120,17 @@ function loadNormalized(items,total=null,detailed=false){
       for(const [key,val] of Object.entries(p)) {
         if(val===null||val===undefined||val==='—'||(Array.isArray(val)&&val.length===0))continue;
         if(key==='type'&&val==='unknown'&&prior.type!=='unknown')continue;
+        // Novos retornos do fornecedor não apagam correções revisadas localmente.
+        if(prior.manualOverrides?.[key]){
+          if(val!==prior[key]){
+            update.providerConflicts={...(update.providerConflicts||{}),
+              [key]:{providerValue:val,reviewedValue:prior[key]}};
+          }
+          continue;
+        }
+        // Histórico local não é substituído por metadados da nova consulta.
+        if(['reviewHistory','manualOverrides','providerSnapshot','reviewImported','providerConflicts'].includes(key))
+          continue;
         update[key]=val;
       }
       if(detailed)update.detailed=true;
@@ -1123,6 +1142,7 @@ function loadNormalized(items,total=null,detailed=false){
     }
   }
   if(total!==null)reported=total;
+  if(activeReviewKey&&!records.some(x=>x.key===activeReviewKey))closeReview();
   drawMap(true);refresh();
   report('Importação concluída: '+items.length+' anúncios nesta consulta e '+records.length+' únicos por ID/fonte na sessão. Dados sujeitos a revisão.');
 }
@@ -1202,7 +1222,7 @@ $('csv-import-btn').onclick=async()=>{
   }catch(e){report(e.message||'Erro ao ler o CSV',true);}
 };
 $('import-btn').onclick=()=>{try{activeLocation=null;displayAudit(null);load(JSON.parse($('json-input').value));}catch(e){report(e.message||'JSON inválido',true);}};
-$('clear-btn').onclick=()=>{records=[];selected.clear();reported=null;center=null;activeLocation=null;displayAudit(null);drawMap(false);refresh();report('Sessão limpa. Nenhum dado foi enviado ao servidor.');};
+$('clear-btn').onclick=()=>{records=[];selected.clear();reported=null;center=null;activeLocation=null;closeReview();displayAudit(null);drawMap(false);refresh();report('Sessão limpa. Nenhum dado foi enviado ao servidor.');};
 function tab(which){const api=which==='api';$('import-panel').classList.toggle('hidden',api);$('api-panel').classList.toggle('hidden',!api);$('tab-api').classList.toggle('active',api);$('tab-import').classList.toggle('active',!api);}
 $('tab-import').onclick=()=>tab('import');$('tab-api').onclick=()=>tab('api');
 const GEO_PORTALS=new Set(['zapimoveis.com.br','vivareal.com.br','chavesnamao.com.br']);
