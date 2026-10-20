@@ -13,7 +13,21 @@
 .import-primary{align-items:end}.guided-panel{margin:18px 0 14px;border-left:4px solid #ed5537}.guided-head{display:flex;gap:12px;justify-content:space-between;align-items:start;flex-wrap:wrap}.guided-head h2{font-size:17px;margin:0}.guided-summary{margin-top:15px;display:grid;gap:12px}.guide-next{background:#f5f8fc;border-radius:12px;padding:14px;font-size:13px;line-height:1.6;color:#28415f}.guide-next.important{background:#fff5ec;border:1px solid #f3d6bd}.guide-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:12px 0;border-bottom:1px solid #e6ecf3}.guide-row:last-child{border:0}.guide-name{font-size:13px;font-weight:800;color:#203653}.guide-price{font-size:15px;font-weight:850;color:#243d56;white-space:nowrap}.guide-reason{font-size:12px;color:#74604a;line-height:1.5;margin:7px 0 0}.guide-meta{font-size:11px;color:#66798b}.guided-workspace{display:block}.guided-workspace>.panel{width:100%}.advanced-filters{margin-bottom:12px}.technical-panel{margin:13px 0;border:1px solid #dfe6ee;border-radius:14px;padding:12px 15px;background:#fff}.technical-panel>summary,.reference-extra>summary{font-weight:750;cursor:pointer;font-size:13px;color:#39546b;line-height:1.5}.technical-panel .summary{margin-top:12px}.map-collapsible .panel{border:0;box-shadow:none;padding:12px 0 0}.map-collapsible #map{height:410px}.reference-extra .grid{margin-top:12px}.guided-workspace .result-scroll{max-height:620px;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}.guided-workspace .result-scroll .listing{min-width:0}.reference-panel .reference-status strong{font-weight:650}.advanced-filters .grid{margin-bottom:12px}
 @media(max-width:780px){.guided-workspace .result-scroll{grid-template-columns:1fr}.guide-row{grid-template-columns:1fr}.guide-price{white-space:normal}}
 @media(max-width:620px){.guided-head button{width:100%}.reference-panel .reference-form{grid-template-columns:repeat(2,minmax(0,1fr))}.import-primary{display:grid}.import-primary button{width:100%}.guide-next{padding:12px}}
- .reference-warning{color:#994519;font-weight:800}.main-area-required{border:2px solid #f0a979!important;background:#fffaf6!important}.advanced-filters[open]{padding-bottom:10px}.guided-summary .guide-row .pill{display:inline-flex}</style></head>
+ .reference-warning{color:#994519;font-weight:800}.main-area-required{border:2px solid #f0a979!important;background:#fffaf6!important}.advanced-filters[open]{padding-bottom:10px}.guided-summary .guide-row .pill{display:inline-flex}
+.offer-indicator{background:#fff;border:1px solid #d7e2eb;border-radius:14px;padding:22px 24px;margin-top:16px}
+.offer-kicker{font-size:12px;letter-spacing:.06em;text-transform:uppercase;font-weight:800;color:#52647b}
+.offer-value{font-size:clamp(34px,5vw,56px);font-weight:900;letter-spacing:-1.8px;line-height:1.15;color:#172c43;margin:9px 0 7px;font-variant-numeric:tabular-nums}
+.offer-subtitle{font-size:13px;color:#5d6c80;line-height:1.6;max-width:630px}
+.offer-band{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px;margin-top:19px;border-top:1px solid #e6ebf1;padding-top:16px}
+.offer-band div{display:grid;gap:5px}.offer-band small{font-size:12px;color:#66788d}.offer-band strong{font-size:22px;color:#233b54;font-variant-numeric:tabular-nums}
+.offer-meta{display:flex;align-items:center;flex-wrap:wrap;gap:10px;color:#62748a;font-size:12px;margin:17px 0}
+.offer-warnings{font-size:12px;line-height:1.65;color:#705c44;margin:6px 0 14px;padding-left:20px}
+.offer-details{border-top:1px solid #e4ebf2;padding:12px 0}.offer-details summary{cursor:pointer;font-size:13px;font-weight:800;color:#294a66}.offer-details p{font-size:12px;color:#54657c;line-height:1.65}
+.offer-details table{width:100%;min-width:600px}.offer-disclaimer{font-size:12px;color:#68788e;line-height:1.6;border-top:1px solid #e8edf2;padding-top:13px;margin:12px 0 0}
+.offer-empty h3{font-size:18px;color:#253a55;margin:10px 0}.offer-empty p{font-size:13px;color:#66758a;line-height:1.6}.offer-note{font-weight:700}
+.guide-divider{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-top:22px;border-top:1px solid #e4eaf1;padding-top:15px;font-size:14px;color:#27405c}.export-tools{display:flex;flex-wrap:wrap;align-items:center;gap:11px;padding-top:18px;margin-top:17px;border-top:1px solid #e5ebf2}
+@media(max-width:620px){.offer-indicator{padding:17px}.offer-band{grid-template-columns:1fr;gap:10px}.offer-band strong{font-size:18px}.offer-value{letter-spacing:-1px}}
+</style></head>
 <body>
 <header><div class="top"><div><div class="logo">⌖ Imóvel <b>Busca</b></div><small>Laboratório independente de pesquisa e comparação</small></div><span class="eyebrow">AMBIENTE EXPERIMENTAL</span></div></header>
 <main>
@@ -139,12 +153,18 @@
 
 <section class="panel guided-panel" id="guided-panel" aria-labelledby="guided-title">
   <div class="guided-head">
-    <div><h2 id="guided-title">3. Entenda sua comparação</h2>
-      <p class="hint">Veja primeiro o que está faltando e quais anúncios merecem uma revisão. A tabela completa é opcional.</p>
+    <div><h2 id="guided-title">3. Veja seu indicativo de valor</h2>
+      <p class="hint">O valor aparece automaticamente quando você seleciona pelo menos dois anúncios aproveitáveis. Não precisa exportar um arquivo.</p>
     </div>
-    <button class="primary" id="export-btn" disabled>Exportar anúncios escolhidos</button>
   </div>
+  <div id="offer-indicator" class="offer-indicator" aria-live="polite" aria-atomic="true">
+    <div class="offer-empty"><h3>Aguardando anúncios</h3><p>Selecione imóveis para comparar.</p></div>
+  </div>
+  <div class="guide-divider"><strong>Conferência dos anúncios escolhidos</strong><span class="muted">Veja os preços e as diferenças que ainda exigem revisão.</span></div>
   <div id="guided-summary" class="guided-summary" aria-live="polite">Salve seu imóvel de referência para começar.</div>
+  <div class="export-tools"><button class="secondary" id="export-btn" disabled>Exportar CSV (opcional)</button>
+    <span class="muted">A exportação é apenas para guardar os dados ou usar numa planilha.</span>
+  </div>
 </section>
 <div class="workspace guided-workspace">
 <section class="panel">

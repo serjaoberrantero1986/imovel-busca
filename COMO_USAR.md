@@ -1,13 +1,29 @@
 # Imóvel Busca — laboratório independente
 Este repositório **não** conecta ao Web Imóveis, Supabase ou domínio de produção. Não contém anúncios fictícios e não calcula valor de mercado/PTAM.
 
+## Valor preliminar na tela — sem obrigatoriedade de CSV
+
+Depois de salvar o imóvel de referência e selecionar **ao menos dois anúncios**, a etapa **3. Veja seu indicativo de valor** passa a mostrar **imediatamente** um indicador numérico, uma faixa e os alertas de confiabilidade. O botão de exportação CSV continua opcional.
+
+### Metodologia exploratória (não é avaliação mercadológica)
+
+1. Exigir tipologia e município/UF correspondentes, preço pedido positivo, área útil (imóveis edificados) ou área total de terreno (terrenos e imóveis rurais), tolerância de metragem definida e referências que não estejam incompletas nem incompatíveis. Excluir anúncios explicitamente identificados como aluguel.
+2. Cada anúncio aproveitável gera um preço **anunciado por m²** = preço pedido / área pertinente. Não há ajuste arbitrário de número de quartos, bairro, conservação, condição negocial ou terreno entre imóveis edificados; essas divergências são avisadas.
+3. **Indicativo** = mediana dos preços anunciados/m² × metragem da referência. **Faixa observada** = mínimo e máximo desses preços por m² projetados na mesma área. A faixa **não é** um intervalo de confiança estatístico; não há tratamento por fatores conforme NBR 14653 ou inferência estatística neste MVP.
+4. A tela discrimina anúncios selecionados, incluídos, excluídos, motivo da exclusão e cálculo detalhado por comparável. Sem referência, metragem ou ao menos 2 anúncios válidos, não exibe número (nunca exibe zero arbitrário). Menos de 5 anúncios recebe aviso **amostra pequena / confiabilidade baixa**. Com mais anúncios, o status continua **limitado** devido aos dados de oferta não homogeneizados.
+5. Alguns imóveis podem compartilhar atributos ou links. Apenas **identidade exata** (mesmo ID+fonte ou mesma URL) é excluída como duplicidade automática; coincidências aproximadas requerem revisão manual.
+
+**Exemplo real fornecido pelo usuário:** Casa Ana Guilherme, casa com **110 m² úteis** em Salto de Pirapora/SP. Três casas anunciadas por R$240.000 (119 m²), R$270.000 (100 m²) e R$385.000 (120 m²). Os preços pedidos/m² são R$2.016,81, R$2.700,00 e R$3.208,33; o indicativo baseado na mediana é **R$297.000**, com faixa observada projetada de **R$222 mil a R$353 mil**, sem ajustes por dormitórios, suítes, vagas ou bairro. **Não** comunicar como valor de mercado concluído.
+
+Uma avaliação mercadológica formal (como PTAM) requer caracterização, fontes documentadas, metodologia apropriada, homogeneização e responsabilidade profissional (Resolução COFECI 1.066/2007). Para o método comparativo direto conforme ABNT NBR 14653, é necessária amostra representativa e tratamento adequado; o algoritmo simples acima **não** a substitui.
+
 ## Guia rápido — três etapas, sem laudo automático
 
-**O Imóvel Busca pesquisa e ajuda a escolher comparáveis; ele ainda NÃO calcula um valor de mercado ou um PTAM.**
+**O Imóvel Busca pesquisa e ajuda a escolher comparáveis; agora calcula um indicativo preliminar de ofertas na tela, mas ainda NÃO calcula valor de mercado tecnicamente validado nem um PTAM.**
 
 1. **Descreva o imóvel que deseja avaliar**. Escolha tipologia, cidade e UF e informe a metragem principal: **área útil/privativa para casas, apartamentos e unidades edificadas**; **área do terreno para terrenos, chácaras e sítios**. Informe dormitórios se conhecidos. Outros atributos estão recolhidos em **Adicionar mais características**.
 2. **Adicione anúncios semelhantes**. Para reutilizar uma pesquisa, escolha o CSV exportado anteriormente e clique **Importar meus anúncios** (sem consumo de créditos). A importação JSON fica recolhida; a busca GeckoAPI está em uma aba claramente identificada como avançada e pede confirmação para gastar créditos.
-3. **Entenda sua comparação**. Marque **Comparar** nos anúncios, idealmente pelo menos dois. A tela mostra os anúncios escolhidos, seus preços pedidos e divergências frente ao imóvel de referência. O aviso **Próximo passo** orienta o que falta — inclusive quando a metragem principal não foi cadastrada. O botão de exportação permanece visível; mapa, filtros extensos, auditoria e tabela completa ficam disponíveis em painéis opcionais.
+3. **Veja seu indicativo de valor**. Marque **Comparar** nos anúncios, com ao menos dois aproveitáveis. A tela mostra automaticamente um indicativo baseado em preços anunciados, a faixa observada, os anúncios escolhidos e divergências frente à referência. O aviso **Próximo passo** orienta o que falta — inclusive quando a metragem principal não foi cadastrada. O botão de exportação permanece visível; mapa, filtros extensos, auditoria e tabela completa ficam disponíveis em painéis opcionais.
 
 **Caso real:** o usuário exportou três casas de Salto de Pirapora para a referência `Casa Ana Guilherme`, mas sem informar a **área útil** dessa casa. O resultado era `insufficient` para todos. A interface guiada explica diretamente qual campo precisa ser preenchido e mostra as diferenças de quartos, suítes, banheiros e vagas, sem apresentar isso como cálculo do valor do imóvel.
 

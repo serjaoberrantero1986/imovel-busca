@@ -93,6 +93,20 @@ function propValue(item,keys) {
   const cleaned=String(value).replace(/[^\d,.]/g,'').replace(/\./g,'').replace(',','.');
   return cleaned&&Number.isFinite(Number(cleaned))?Number(cleaned):null;
 }
+
+function inferOfferPurpose(item,selectedPrice=null){
+  const codes=[item?.offerPurpose,item?.businessType,item?.transactionType,
+    item?.operation,selectedPrice?.businessType].filter(v=>typeof v==='string');
+  for(const input of codes){
+    const code=canon(input);
+    if(/^(rent|rental|aluguel|locacao|lease)$/.test(code))return 'rent';
+    if(/^(sale|sell|venda|buy)$/.test(code))return 'sale';
+  }
+  const link=url(item?.link||item?.url||item?.listingUrl)||'';
+  if(/(?:^|[-/])(?:aluguel|locacao|rent)(?:[-/?]|$)/i.test(link))return 'rent';
+  if(/(?:^|[-/])(?:venda|sale)(?:[-/?]|$)/i.test(link))return 'sale';
+  return 'unknown';
+}
 const BR_STATES={AC:'acre',AL:'alagoas',AP:'amapa',AM:'amazonas',BA:'bahia',CE:'ceara',DF:'distrito federal',ES:'espirito santo',GO:'goias',MA:'maranhao',MT:'mato grosso',MS:'mato grosso do sul',MG:'minas gerais',PA:'para',PB:'paraiba',PR:'parana',PE:'pernambuco',PI:'piaui',RJ:'rio de janeiro',RN:'rio grande do norte',RS:'rio grande do sul',RO:'rondonia',RR:'roraima',SC:'santa catarina',SP:'sao paulo',SE:'sergipe',TO:'tocantins'};
 function uf(v) {const x=canon(v);return Object.keys(BR_STATES).find(k=>canon(k)===x||BR_STATES[k]===x)||'';}
 function normalized(item,source) {
@@ -110,7 +124,7 @@ function normalized(item,source) {
   const count=(key,fallback)=>number(counts[key]?.count??fallback);
   const type=classify(item);
   return {
-    id,key:source+':'+id,source,type,
+    id,key:source+':'+id,source,type,offerPurpose:inferOfferPurpose(item,prices),
     title:bestTitle(item,type,{neighborhood:address.neighborhood||location.neighborhood}),
     link:url(item.url||item.listingUrl),
     price:number(prices.mainValue??prices.value??prices.rawPrice??prices.price??item.askingPrice??item.price?.amount??item.price),
@@ -356,6 +370,126 @@ function referenceTitle(reference){
   return reference.type==='other'?reference.customType:typeLabel[reference.type];
 }
 
+
+/*
+ * INDICATIVO DE OFERTAS — não é avaliação mercadológica nem PTAM.
+ * Base estatística transparente: mediana dos preços pedidos/m², projetada
+ * para a área do imóvel de referência, sem "fatores" arbitrários.
+ * Faixa exibida = extremos observados na amostra, NÃO intervalo de confiança.
+ */
+function indicatorMedian(sorted){
+  const mid=Math.floor(sorted.length/2);
+  return sorted.length%2?sorted[mid]:(sorted[mid-1]+sorted[mid])/2;
+}
+function indicatorSimilarListing(a,b){
+  // Indicadores não devem contar o mesmo anúncio duas vezes. Coincidências
+  // mais amplas são apenas indícios; este teste é conservador.
+  if(a.source===b.source&&a.id&&b.id&&a.id===b.id)return true;
+  const aLink=url(a.link),bLink=url(b.link);
+  if(aLink&&bLink&&aLink===bLink)return true;
+  return false;
+}
+function computeOfferIndicator(reference,chosen){
+  const list=Array.isArray(chosen)?chosen:[];
+  const base={status:'unavailable',value:null,low:null,high:null,unitMedian:null,
+    area:null,areaLabel:'',included:[],excluded:[],selectedCount:list.length,
+    reliability:'Não calculável',reasons:[]};
+  if(!reference)return {...base,reasons:['Cadastre o imóvel de referência antes de calcular o indicativo.']};
+  if(reference.type==='other')return {...base,reasons:['Tipologia personalizada: valide equivalência dos anúncios manualmente antes de estimar valores.']};
+  const areaKey=['land','farm'].includes(reference.type)?'total':'usable';
+  const areaLabel=areaKey==='total'?'área de terreno':'área útil / privativa';
+  const area=reference[areaKey];
+  if(!Number.isFinite(area)||area<=0)
+    return {...base,areaLabel,reasons:['Informe a '+areaLabel+' do imóvel de referência para obter o valor preliminar.']};
+  const result={...base,area,areaLabel,reasons:[]};
+  if(list.length<2){
+    result.reasons.push('Selecione pelo menos dois anúncios para calcular o indicativo.');
+    return result;
+  }
+  for(const item of list){
+    const p=item||{},label=p.title||p.id||'Anúncio sem título';
+    const issue=(reason)=>result.excluded.push({key:p.key||null,label,reason});
+    const purpose=inferOfferPurpose(p);
+    if(purpose==='rent'){issue('Anúncio de locação: não pode compor indicativo de venda.');continue;}
+    const review=assessReference(reference,p);
+    if(review.status==='incompatible'){issue('Tipologia ou município incompatível.');continue;}
+    if(review.status==='insufficient'){issue('Dados essenciais ausentes: '+(review.issues[0]||'verifique os atributos')+'.');continue;}
+    if(p.type!==reference.type){issue('Subtipos diferentes precisam de conferência antes do cálculo.');continue;}
+    const pArea=p[areaKey];
+    if(!Number.isFinite(p.price)||p.price<=0||!Number.isFinite(pArea)||pArea<=0){
+      issue('Preço pedido ou área do anúncio inválidos.');continue;
+    }
+    if(review.areaDeviation===null||review.areaDeviation>reference.tolerance){
+      issue('Metragem fora da tolerância ±'+reference.tolerance+'% definida para o imóvel.');continue;
+    }
+    if(result.included.some(other=>indicatorSimilarListing(p,other.item))){
+      issue('Mesmo anúncio encontrado mais de uma vez.');continue;
+    }
+    result.included.push({item:p,key:p.key||null,label,area:pArea,ask:p.price,
+      unit:p.price/pArea,normalized:(p.price/pArea)*area,
+      warnings:review.issues.slice(0,5)});
+  }
+  if(result.included.length<2){
+    result.reasons.push('Apenas '+result.included.length+' anúncio(s) da seleção passaram pelos requisitos. É necessário ter ao menos dois para mostrar um indicativo.');
+    return result;
+  }
+  const units=result.included.map(x=>x.unit).sort((a,b)=>a-b);
+  result.unitMedian=indicatorMedian(units);
+  result.value=result.unitMedian*area;
+  result.low=units[0]*area;
+  result.high=units.at(-1)*area;
+  result.status='ready';
+  result.reliability=result.included.length<5?'Baixa — amostra pequena':'Limitada — dados de oferta sem homogeneização';
+  if(result.included.length<5)
+    result.reasons.push('Somente '+result.included.length+' anúncios válidos; a amostra é pequena.');
+  if(result.included.some(x=>x.warnings.length))
+    result.reasons.push('Os anúncios apresentam diferenças de características que não foram ajustadas matematicamente.');
+  if(result.included.some(x=>inferOfferPurpose(x.item)==='unknown'))
+    result.reasons.push('A finalidade de venda não foi confirmada em todos os anúncios; confira os links de origem.');
+  const spread=(units.at(-1)-units[0])/result.unitMedian;
+  if(spread>0.3)result.reasons.push('Dispersão dos preços por m² superior a 30% da mediana.');
+  if(result.excluded.length)
+    result.reasons.push(result.excluded.length+' anúncio(s) selecionado(s) não entraram no cálculo.');
+  result.reasons.push('Preços pedidos não equivalem a valores efetivos de transação.');
+  return result;
+}
+function renderOfferIndicator(){
+  const host=$('offer-indicator');
+  if(!host)return;
+  const chosen=records.filter(p=>selected.has(p.key));
+  const stats=computeOfferIndicator(referenceProfile,chosen);
+  if(stats.status!=='ready'){
+    host.innerHTML='<div class="offer-empty"><div class="offer-kicker">Indicativo preliminar na tela</div>'+
+      '<h3>Aguardando dados para estimar</h3><p>'+safe(stats.reasons.join(' '))+'</p>'+
+      '<p class="offer-note">Não é necessário exportar CSV para obter um resultado.</p></div>';
+    return;
+  }
+  const approx=value=>money(Math.round(value/1000)*1000);
+  const warnings=stats.reasons.map(reason=>'<li>'+safe(reason)+'</li>').join('');
+  host.innerHTML=
+    '<div class="offer-kicker">Indicativo preliminar · preços anunciados</div>'+
+    '<div class="offer-value">'+safe(approx(stats.value))+'</div>'+
+    '<div class="offer-subtitle">Mediana de '+stats.included.length+' anúncios equivalentes em tipologia, município e faixa de metragem.</div>'+
+    '<div class="offer-band"><div><small>Menor projeção observada</small><strong>'+safe(approx(stats.low))+'</strong></div>'+
+      '<div><small>Maior projeção observada</small><strong>'+safe(approx(stats.high))+'</strong></div></div>'+
+    '<div class="offer-meta"><span class="pill quality-warn">Confiabilidade: '+safe(stats.reliability)+'</span>'+
+      '<span>'+stats.selectedCount+' selecionados · '+stats.excluded.length+' excluídos do cálculo</span></div>'+
+    '<ul class="offer-warnings">'+warnings+'</ul>'+
+    '<details class="offer-details"><summary>Como este número foi calculado</summary>'+
+      '<p>Mediana dos preços <strong>anunciados</strong> por m² × '+safe(stats.area)+
+      ' m² de '+safe(stats.areaLabel)+'. Mediana: '+safe(money(stats.unitMedian))+'/m².'+
+      ' A faixa é o menor e o maior preço por m² observados, projetados para a mesma área; '+
+      '<strong>não é intervalo de confiança nem aplicação de ajustes por fatores</strong>.</p>'+
+      '<div class="table-scroll"><table><thead><tr><th>Anúncio</th><th>Preço pedido</th><th>Área</th><th>Preço/m²</th><th>Projeção</th></tr></thead><tbody>'+
+      stats.included.map(x=>'<tr><td>'+safe(x.label)+'</td><td>'+safe(money(x.ask))+'</td>'+
+        '<td>'+safe(x.area)+' m²</td><td>'+safe(money(x.unit))+'</td><td>'+safe(approx(x.normalized))+'</td></tr>').join('')+
+      '</tbody></table></div>'+
+      (stats.excluded.length?'<p><strong>Fora do cálculo:</strong> '+
+         stats.excluded.map(x=>safe(x.label)+' — '+safe(x.reason)).join('; ')+'</p>':'')+
+    '</details>'+
+    '<p class="offer-disclaimer">Isto é um <strong>indicador de ofertas comparáveis</strong>, não um valor de avaliação tecnicamente validado, laudo ou PTAM. O preço pode mudar após verificar características, transações e metodologia.</p>';
+}
+
 function guideAdvice(reference,items,chosen){
   const label=reference&&['land','farm'].includes(reference.type)?'área do terreno':'área útil / privativa';
   const area=reference?(['land','farm'].includes(reference.type)?reference.total:reference.usable):null;
@@ -369,7 +503,7 @@ function guideAdvice(reference,items,chosen){
   const incompatible=reviewed.filter(x=>x.status==='incompatible').length;
   if(incompatible)return {level:'important',message:'Você selecionou '+chosen.length+' anúncios, mas '+incompatible+' estão fora do recorte de tipologia ou município. Considere substituí-los antes de aprofundar a comparação.'};
   if(missing)return {level:'important',message:'Você selecionou '+chosen.length+' anúncios. Em '+missing+' faltam dados para conferir a semelhança. Veja os motivos abaixo; mantenha apenas os anúncios que puder verificar.'};
-  return {level:'normal',message:'Você selecionou '+chosen.length+' anúncios. Confira as diferenças abaixo, abra os links originais e mantenha apenas imóveis realmente equivalentes. O sistema não calcula o valor de mercado.'};
+  return {level:'normal',message:'Você selecionou '+chosen.length+' anúncios. Confira o indicativo preliminar acima, veja as diferenças abaixo e valide os links originais antes de usar os dados numa avaliação.'};
 }
 function renderGuidedSummary(){
   const el=$('guided-summary');
@@ -398,7 +532,7 @@ function renderGuidedSummary(){
         '</div></div>';
     }
   }
-  html+='<p class="hint"><strong>Importante:</strong> este resultado serve para escolher e conferir comparáveis. Não calcula valor sugerido, preço negociado ou PTAM. Não transforme uma média de anúncios em avaliação sem metodologia técnica e validação das amostras.</p>';
+  html+='<p class="hint"><strong>Importante:</strong> este resultado serve para escolher e conferir comparáveis. O indicador acima utiliza somente preços anunciados por m², sem ajustes técnicos de características. Não representa valor de mercado concluído, preço negociado ou PTAM.</p>';
   el.innerHTML=html;
 }
 
@@ -599,7 +733,7 @@ function renderComparison() {
     '<p class="hint">Triagem preliminar: '+safe(cautions.join(' ')||'Campos essenciais presentes; confirme os anúncios, localização e homogeneidade.')+
     ' Preços anunciados não representam preços efetivos de venda. Nenhuma avaliação ou PTAM é calculado.</p>';
 }
-function refresh(){renderCards();renderComparison();renderGuidedSummary();}
+function refresh(){renderCards();renderComparison();renderGuidedSummary();renderOfferIndicator();}
 function loadNormalized(items,total=null,detailed=false){
   const known=new Map(records.map((x,i)=>[x.key,i]));
   for (const p of items) {
@@ -665,6 +799,7 @@ function parseExportCsv(raw){
     const neighborhood=row.neighborhood?.trim()||'—';
     const record={
       source,id:id||link,key:source+':'+(id||link),type,
+      offerPurpose:inferOfferPurpose({...row,link}),
       title:bestTitle({title:row.title,neighborhood},type,{neighborhood:neighborhood==='—'?'':neighborhood}),
       link,price:number(row.price),usable:number(row.usable),total:number(row.total),
       beds:number(row.beds),suites:number(row.suites),baths:number(row.baths),
@@ -894,7 +1029,7 @@ for(const id of ['in-radius','min-beds','dedupe','result-type','quality-filter',
 }
 $('export-btn').onclick=()=>{
   const picked=records.filter(p=>selected.has(p.key));if(picked.length<2)return;
-  const fields=['source','id','type','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser',
+  const fields=['source','id','type','offerPurpose','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser',
     'ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_area_m2','ref_area_tolerance_percent','ref_status','ref_reasons'];
   const derived=p=>{
     const r=referenceProfile,m=assessReference(r,p),land=r&&['land','farm'].includes(r.type);
@@ -907,7 +1042,7 @@ $('export-btn').onclick=()=>{
       ref_reasons:m?.issues.join(' | ')??''
     };
   };
-  const formulaSensitive=new Set(['source','id','type','title','link','neighborhood','city','state','advertiser','ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_status','ref_reasons']);
+  const formulaSensitive=new Set(['source','id','type','offerPurpose','title','link','neighborhood','city','state','advertiser','ref_name','ref_type','ref_city','ref_state','ref_area_used','ref_status','ref_reasons']);
   const csvValue=(key,value)=>{
     const raw=String(value??'');
     // Protege a abertura do CSV em planilhas contra fórmulas injetadas em

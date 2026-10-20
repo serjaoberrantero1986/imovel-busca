@@ -161,3 +161,15 @@ Imagem enviada pelo usuário mostrou `Access blocked` em todos os tiles da OpenS
 A branch `fix/openfreemap-basemap-20261020` substitui exclusivamente o **basemap**: integra OpenFreeMap Positron (vetorial) via MapLibre GL JS e adaptador Leaflet, com atribuição visível e aviso quando a camada não carrega. O objetivo é preservar Leaflet, IDs da UI, marcadores, centro arrastável, raios, distâncias, seleção e CSV. Não usar outros domínios OSMF como forma de contornar bloqueio. Documentação do fornecedor: https://openfreemap.org/quick_start/ (uso comercial permitido, sem chave de API, sem SLA). Para escala/garantias comerciais, considerar tiles próprios ou fornecedor contratado.
 
 CSV real do usuário: três registros selecionados, dois geolocalizados e um sem coordenadas. `ref_area_m2=110` e `ref_status=review` para os três imóveis da Casa Ana Guilherme. Nenhuma consulta autenticada adicional à GeckoAPI, nem mudança em `imovel-hub`.
+
+## 12. Indicativo instantâneo de ofertas na tela — 2026-10-20
+
+O usuário confirmou que o mapa OpenFreeMap funcionou, importou e exportou outro CSV, mas observou que a exportação havia se tornado o aparente resultado principal, quando sua intenção era receber um **valor indicativo instantâneo no próprio laboratório**.
+
+Decisão de produto: colocar o indicador de ofertas na etapa 3, com **valor grande, faixa observada, amostra e motivos de cautela**, e relegar CSV a botão secundário opcional. Não chamar a mediana simples de valor de avaliação homologada ou PTAM.
+
+**Algoritmo exploratório**: exigir referência cadastrada com tipo conhecido, município/UF e área pertinente; seleção de 2+ anúncios com preço pedido, mesmo tipo e município, área válida dentro da tolerância do formulário e finalidade não identificada como aluguel. Ignorar duplicidades exatas. Calcular mediana de (preço anunciado/área do anúncio), multiplicar pela área da referência. Faixa visual = extremos desses preços por m² projetados para a referência. Sem ajustes monetários arbitrários para suítes, bairro, padrão, idade ou conservação. Avisar quando dados insuficientes, quando há diferenças físicas, dispersão ou amostra menor que 5; nenhuma categoria é “laudo validado”. Finalidade desconhecida implica cautela. Manter motivos de exclusão detalhados.
+
+**Exemplo CSV real** da Casa Ana Guilherme: 110 m² úteis; anúncios de 119 m²/R$240 mil, 100 m²/R$270 mil, 120 m²/R$385 mil. Mediana preço anunciado/m² = R$2.700. Indicativo de ofertas = **R$297 mil**. Extremos projetados = aproximadamente **R$222 mil a R$353 mil**, sem representar confiança estatística nem valor efetivo de transação. As diferenças de dormitórios, suítes, banheiros e vagas são apenas alertas, sem fatores inventados.
+
+**Limites**: antes de implantar método avaliatório formal, estudar ABNT NBR 14653 e Resolução COFECI 1.066/2007, direitos de dados, seleção amostral, homogeneização validada e responsabilidade técnica. O laboratório permanece isolado de `imovel-hub`; não acionar GeckoAPI sem autorização.

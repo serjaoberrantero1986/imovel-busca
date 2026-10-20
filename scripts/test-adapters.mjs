@@ -9,7 +9,7 @@ function el(id){
 }
 const doc={getElementById:el,createElement(){return {value:'',textContent:'',innerHTML:'',classList:{toggle(){}},querySelector(){return {}},appendChild(){}}}};
 const src=readFileSync(new URL('../app.js',import.meta.url),'utf8');
-const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords,guideAdvice,renderGuidedSummary,selected})',{document:doc,window:{},console,URL});
+const ctx=runInNewContext(src+';({normalized,payload,classify,canon,uf,parseExportCsv,reviewComparable,duplicate,loadNormalized,records,makeReference,assessReference,referenceTypeFamilies,referenceLabels,visibleRecords,guideAdvice,renderGuidedSummary,selected,computeOfferIndicator,renderOfferIndicator,inferOfferPurpose,setReferenceForTest:reference=>{referenceProfile=reference}})',{document:doc,window:{},console,URL});
 test('VivaReal PLP: preços em array e coordenadas aninhadas',()=>{
   const x=ctx.payload({data:{source:'vivareal.com.br',items:[{
     id:'100',title:'Casa à venda',unitTypes:['HOME'],
@@ -336,7 +336,7 @@ test('Orientação: avança da referência para importação e escolha de dois a
  assert.match(ctx.guideAdvice(r,[],[]).message,/CSV/);
  assert.match(ctx.guideAdvice(r,[ad],[]).message,/dois anúncios/);
  assert.match(ctx.guideAdvice(r,[ad],[ad]).message,/mais um/);
- assert.match(ctx.guideAdvice(r,[ad,ad],[ad,ad]).message,/Confira as diferenças/);
+ assert.match(ctx.guideAdvice(r,[ad,ad],[ad,ad]).message,/Confira o indicativo preliminar/);
 });
 test('Resumo guiado: exibe motivos reais de anúncios selecionados sem gerar valor de mercado',()=>{
  ctx.records.length=0;ctx.selected.clear();
@@ -386,7 +386,7 @@ test('Interface simplificada: referência, arquivo e resultado seguem três pass
  assert.match(html,/<details[^>]*id="comparison-extra"/);
  assert.match(html,/1\. Descreva o imóvel/);
  assert.match(html,/2\. Adicione anúncios semelhantes/);
- assert.match(html,/3\. Entenda sua comparação/);
+ assert.match(html,/3\. Veja seu indicativo de valor/);
 });
 
 
@@ -446,4 +446,154 @@ test('Mapa: falta do plugin não deve impedir a lista de comparáveis',()=>{
   });
   assert.equal(app.visibleRecords().length,0);
   assert.equal(warned,true);
+});
+
+
+test('Estimativa instantânea: Casa Ana Guilherme e três anúncios reais do CSV',()=>{
+ const r=ctx.makeReference({name:'Casa Ana Guilherme',type:'house',city:'Salto de Pirapora',
+   state:'SP',usable:110,beds:3,suites:1,baths:2,spaces:2,tolerance:20});
+ const source='vivareal.com.br';
+ const rows=[
+   ['2915563837','Casa • Chácaras Parque Pirapora',240000,119,2,1,2,2,'Chácaras Parque Pirapora'],
+   ['2917942713','Casa • Jardim Sao Carlos',270000,100,2,1,2,4,'Jardim Sao Carlos'],
+   ['2917562934','Casa • São Lucas',385000,120,3,3,3,1,'São Lucas']
+ ].map(([id,title,price,usable,beds,suites,baths,spaces,neighborhood])=>({
+   key:source+':'+id,id,source,title,type:'house',price,usable,
+   city:'Salto de Pirapora',state:'SP',beds,suites,baths,spaces,neighborhood,lat:null,lng:null
+ }));
+ const indicator=ctx.computeOfferIndicator(r,rows);
+ assert.equal(indicator.status,'ready');
+ assert.equal(indicator.selectedCount,3);
+ assert.equal(indicator.included.length,3);
+ assert.equal(indicator.excluded.length,0);
+ assert.equal(indicator.area,110);
+ assert.equal(indicator.unitMedian,2700);
+ assert.equal(indicator.value,297000);
+ assert.ok(Math.abs(indicator.low-221848.73949)<0.01);
+ assert.ok(Math.abs(indicator.high-352916.6667)<0.01);
+ assert.match(indicator.reliability,/Baixa/);
+ assert.ok(indicator.reasons.some(msg=>msg.includes('não foram ajustadas')));
+ assert.ok(indicator.reasons.some(msg=>msg.includes('30%')));
+ assert.ok(!Object.hasOwn(indicator,'ptam'));
+ assert.ok(!Object.hasOwn(indicator,'marketValue'));
+});
+test('Estimativa instantânea: número não aparece sem referência, área ou duas amostras',()=>{
+ const r=ctx.makeReference({type:'house',city:'Salto de Pirapora',state:'SP',usable:110});
+ const ad={key:'test:1',source:'test',id:'1',type:'house',price:250000,usable:110,city:'Salto de Pirapora',state:'SP'};
+ assert.equal(ctx.computeOfferIndicator(null,[ad,ad]).value,null);
+ assert.equal(ctx.computeOfferIndicator({...r,usable:null},[ad,ad]).value,null);
+ assert.equal(ctx.computeOfferIndicator(r,[ad]).value,null);
+ assert.equal(ctx.computeOfferIndicator(r,[]).status,'unavailable');
+});
+test('Estimativa instantânea: exclui outro município, tipologia e áreas fora da faixa',()=>{
+ const r=ctx.makeReference({type:'house',city:'Salto de Pirapora',state:'SP',usable:100,tolerance:20});
+ const base={type:'house',city:'Salto de Pirapora',state:'SP',price:200000,usable:100,
+   neighborhood:'Centro',lat:null,lng:null,source:'portal'};
+ const rows=[
+   {...base,id:'ok',key:'portal:ok'},
+   {...base,id:'same',key:'portal:same',price:220000},
+   {...base,id:'wrongcity',key:'portal:wrongcity',city:'Sorocaba'},
+   {...base,id:'wrongtype',key:'portal:wrongtype',type:'land'},
+   {...base,id:'badarea',key:'portal:badarea',usable:200},
+   {...base,id:'missingprice',key:'portal:missingprice',price:null},
+   {...base,id:'missingarea',key:'portal:missingarea',usable:null}
+ ];
+ const indicator=ctx.computeOfferIndicator(r,rows);
+ assert.equal(indicator.included.length,2);
+ assert.equal(indicator.excluded.length,5);
+ assert.equal(indicator.value,210000);
+ assert.equal(indicator.status,'ready');
+});
+test('Estimativa instantânea: ignora duplicidade exata e não duplica valores',()=>{
+ const r=ctx.makeReference({type:'land',city:'Salto de Pirapora',state:'SP',total:250,tolerance:20});
+ const source='portal';
+ const rows=[
+  {key:'portal:1',source,id:'1',type:'land',price:200000,total:250,city:'Salto de Pirapora',state:'SP'},
+  {key:'portal:1-again',source,id:'1',type:'land',price:200000,total:250,city:'Salto de Pirapora',state:'SP'},
+  {key:'portal:2',source,id:'2',type:'land',price:220000,total:250,city:'Salto de Pirapora',state:'SP'}
+ ];
+ const indicator=ctx.computeOfferIndicator(r,rows);
+ assert.equal(indicator.included.length,2);
+ assert.equal(indicator.excluded.length,1);
+ assert.equal(indicator.value,210000);
+ assert.equal(indicator.areaLabel,'área de terreno');
+});
+test('Estimativa instantânea: tipologia desconhecida não é presumida como equivalente',()=>{
+ const r=ctx.makeReference({type:'other',customType:'Pousada',city:'Salto de Pirapora',state:'SP',usable:110});
+ const p={type:'other',price:300000,usable:110,city:'Salto de Pirapora',state:'SP'};
+ const estimate=ctx.computeOfferIndicator(r,[p,p]);
+ assert.equal(estimate.status,'unavailable');
+ assert.match(estimate.reasons.join(' '),/manualmente/);
+});
+test('Painel de valor responde à seleção sem exigir exportação CSV',()=>{
+ ctx.records.length=0;ctx.selected.clear();
+ const records=[
+  {key:'viva:1',id:'1',source:'vivareal.com.br',title:'Casa 1',type:'house',
+   price:240000,usable:100,city:'Salto de Pirapora',state:'SP',lat:null,lng:null,amenities:[],
+   neighborhood:'Centro'},
+  {key:'viva:2',id:'2',source:'vivareal.com.br',title:'Casa 2',type:'house',
+   price:300000,usable:120,city:'Salto de Pirapora',state:'SP',lat:null,lng:null,amenities:[],
+   neighborhood:'Centro'}
+ ];
+ ctx.records.push(...records);
+ // Outros testes inicializam instâncias isoladas do app com o mesmo mock de DOM.
+ // A referência é atribuída à própria instância sob teste, não a um onclick sobreposto.
+ const ref=ctx.makeReference({name:'Casa Ana Guilherme',type:'house',
+   city:'Salto de Pirapora',state:'SP',usable:110,tolerance:20});
+ ctx.setReferenceForTest(ref);
+ ctx.renderOfferIndicator();
+ assert.match(el('offer-indicator').innerHTML,/Selecione pelo menos dois/);
+ ctx.selected.add('viva:1');ctx.selected.add('viva:2');
+ ctx.renderOfferIndicator();
+ assert.match(el('offer-indicator').innerHTML,/R\$\s270\.000/);
+ assert.match(el('offer-indicator').innerHTML,/Como este número foi calculado/);
+ assert.match(el('offer-indicator').innerHTML,/não um valor de avaliação/);
+ ctx.selected.clear();ctx.records.length=0;
+ ctx.setReferenceForTest(null);
+});
+
+
+test('Indicativo de venda não confunde anúncio de aluguel com preço de comercialização',()=>{
+ const ref=ctx.makeReference({type:'house',city:'Salto de Pirapora',state:'SP',usable:100});
+ const ads=[
+  {key:'sale:1',source:'vivareal.com.br',id:'s1',type:'house',price:250000,usable:100,
+    link:'https://www.vivareal.com.br/imovel/casa-100m2-venda-RS250000-id-1/',
+    city:'Salto de Pirapora',state:'SP'},
+  {key:'sale:2',source:'vivareal.com.br',id:'s2',type:'house',price:300000,usable:100,
+    link:'https://www.vivareal.com.br/imovel/casa-100m2-venda-RS300000-id-2/',
+    city:'Salto de Pirapora',state:'SP'},
+  {key:'rent:3',source:'vivareal.com.br',id:'r3',type:'house',price:1800,usable:100,
+    link:'https://www.vivareal.com.br/imovel/casa-100m2-aluguel-RS1800-id-3/',
+    city:'Salto de Pirapora',state:'SP'}
+ ];
+ assert.equal(ctx.inferOfferPurpose(ads[0]),'sale');
+ assert.equal(ctx.inferOfferPurpose(ads[2]),'rent');
+ const result=ctx.computeOfferIndicator(ref,ads);
+ assert.equal(result.included.length,2);
+ assert.equal(result.excluded.length,1);
+ assert.match(result.excluded[0].reason,/locação/);
+ assert.equal(result.value,275000);
+ assert.equal(ctx.inferOfferPurpose({prices:[],offerPurpose:'rent'}),'rent');
+ assert.equal(ctx.inferOfferPurpose({prices:[],businessType:'sale'}),'sale');
+});
+test('CSV de comparáveis mantém finalidade de venda quando disponível, sem inventar quando ausente',()=>{
+ const cols='source;id;type;title;link;price;usable;total;city;state';
+ const rows=[
+  '"vivareal.com.br";"1";"house";"Casa 1";"https://www.vivareal.com.br/imovel/casa-100m2-venda-RS300000-id-1/";"300000";"100";"120";"Salto de Pirapora";"SP"',
+  '"vivareal.com.br";"2";"house";"Casa 2";"https://www.vivareal.com.br/imovel/casa-100m2-aluguel-RS2000-id-2/";"2000";"100";"120";"Salto de Pirapora";"SP"',
+  '"vivareal.com.br";"3";"house";"Casa 3";"";"310000";"100";"120";"Salto de Pirapora";"SP"'
+ ];
+ const parsed=ctx.parseExportCsv([cols,...rows].join('\n'));
+ assert.equal(parsed[0].offerPurpose,'sale');
+ assert.equal(parsed[1].offerPurpose,'rent');
+ assert.equal(parsed[2].offerPurpose,'unknown');
+});
+test('Interface mostra indicativo como informação principal e CSV apenas opcional',()=>{
+ const html=readFileSync(new URL('../index.html',import.meta.url),'utf8');
+ const indicative=html.indexOf('id="offer-indicator"');
+ const guide=html.indexOf('id="guided-summary"');
+ const exportButton=html.indexOf('id="export-btn"');
+ assert.ok(indicative>0&&guide>indicative&&exportButton>guide);
+ assert.match(html,/Exportar CSV \(opcional\)/);
+ assert.match(html,/não precisa exportar um arquivo/i);
 });
