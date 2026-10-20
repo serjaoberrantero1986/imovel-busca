@@ -74,9 +74,11 @@ function normalized(item,source) {
   const attr=(!Array.isArray(item.attributes)&&item.attributes)||{};
   const prices=Array.isArray(item.prices)?item.prices.find(p=>p.businessType==='SALE')||item.prices[0]||{}:item.prices||{};
   const area=item.area||{},counts=item.counts||{};
-  const address=item.address||item.location||{},geo=item.coordinates||address.coordinates||{};
-  const lat=number(address.latitude??geo.latitude??item.latitude);
-  const lng=number(address.longitude??geo.longitude??item.longitude);
+  const address=item.address&&typeof item.address==='object'?item.address:{};
+  const location=item.location&&typeof item.location==='object'?item.location:{};
+  const geo=item.coordinates||address.coordinates||location.coordinates||{};
+  const lat=number(address.latitude??location.latitude??geo.latitude??item.latitude);
+  const lng=number(address.longitude??location.longitude??geo.longitude??item.longitude);
   const valid=lat!==null&&lng!==null&&Math.abs(lat)<=90&&Math.abs(lng)<=180&&(lat!==0||lng!==0);
   const id=text(item.id||item.listingId||item.externalId||item.listingExternalId||item.adId||item.url);
   const take=(key,fallback)=>number(first(attr[key])??fallback);
@@ -84,7 +86,7 @@ function normalized(item,source) {
   const type=classify(item);
   return {
     id,key:source+':'+id,source,type,
-    title:bestTitle(item,type,address),
+    title:bestTitle(item,type,{neighborhood:address.neighborhood||location.neighborhood}),
     link:url(item.url||item.listingUrl),
     price:number(prices.mainValue??prices.value??prices.rawPrice??prices.price??item.askingPrice??item.price?.amount??item.price),
     usable:take('usableAreas',area.useful??item.property?.usableArea??item.usableArea??propValue(item,['area util','area privativa'])),
@@ -94,10 +96,11 @@ function normalized(item,source) {
     baths:take('bathrooms',count('bathrooms',item.property?.bathrooms??item.bathrooms??propValue(item,['banheiros']))),
     spaces:take('parkingSpaces',count('garages',item.property?.parkingSpaces??item.parkingSpaces??propValue(item,['vagas','garagem']))),
     floors:take('floors',item.floors),
-    neighborhood:text(address.neighborhood||item.neighborhood),
-    city:text(address.city||item.city),state:uf(address.stateAcronym||address.stateCode||address.state||item.stateCode||item.state)||text(address.stateCode||address.state||item.stateCode||item.state),
+    neighborhood:text(address.neighborhood||location.neighborhood||item.neighborhood),
+    city:text(address.city||location.city||item.city),
+    state:uf(address.stateAcronym||address.stateCode||address.state||location.stateAcronym||location.stateCode||location.state||item.stateCode||item.state)||text(address.stateCode||address.state||location.stateCode||location.state||item.stateCode||item.state),
     lat:valid?lat:null,lng:valid?lng:null,
-    approx:address.isApproximateLocation===true||address.approximate===true||address.publicAddress===false,
+    approx:address.isApproximateLocation===true||address.approximate===true||address.publicAddress===false||location.isApproximateLocation===true||location.approximate===true||location.publicAddress===false,
     amenities:Array.isArray(item.amenities)?item.amenities:Array.isArray(item.privativeAmenities)?item.privativeAmenities:[],
     advertiser:text(item.advertiser?.name||item.publisher?.name),description:text(item.description),
     detailed:false
@@ -149,14 +152,16 @@ function reviewComparable(p) {
 }
 const qualityLabels={complete:'Dados essenciais completos',review:'Requer conferência',insufficient:'Dados insuficientes'};
 function duplicate(p) {
-  if(p.type==='unknown'||!p.price||!p.usable||!p.city||!uf(p.state)||!p.neighborhood||p.neighborhood==='—')return false;
+  const area=p.type==='land'?p.total:p.usable;
+  if(p.type==='unknown'||!p.price||!area||!p.city||!uf(p.state)||!p.neighborhood||p.neighborhood==='—')return false;
   return records.some(q => {
-    if(q.key===p.key||q.type!==p.type||!q.price||!q.usable)return false;
+    const comparedArea=q.type==='land'?q.total:q.usable;
+    if(q.key===p.key||q.type!==p.type||!q.price||!comparedArea)return false;
     if(canon(q.city)!==canon(p.city)||uf(q.state)!==uf(p.state))return false;
     if(canon(q.neighborhood)!==canon(p.neighborhood)||p.neighborhood==='—')return false;
     if(q.beds!==null&&p.beds!==null&&q.beds!==p.beds)return false;
     const priceDiff=Math.abs(q.price-p.price)/Math.max(q.price,p.price);
-    const areaDiff=Math.abs(q.usable-p.usable)/Math.max(q.usable,p.usable);
+    const areaDiff=Math.abs(comparedArea-area)/Math.max(comparedArea,area);
     return priceDiff<=0.02&&areaDiff<=0.03;
   });
 }
@@ -311,6 +316,7 @@ function parseExportCsv(raw){
   const headers=rows.shift().map(v=>v.trim());
   const required=['source','id','price','usable','total','city','state','link'];
   if(required.some(key=>!headers.includes(key)))throw Error('Formato CSV incompatível com a exportação do Imóvel Busca.');
+  if(!rows.length)throw Error('CSV sem anúncios.');
   if(rows.length>2000)throw Error('CSV com mais de 2.000 anúncios: divida o arquivo em partes.');
   return rows.map((values,i)=>{
     if(values.length!==headers.length)throw Error('CSV: número de colunas incorreto na linha '+(i+2)+'.');
@@ -554,7 +560,15 @@ for(const id of ['in-radius','min-beds','dedupe','result-type','quality-filter',
 $('export-btn').onclick=()=>{
   const picked=records.filter(p=>selected.has(p.key));if(picked.length<2)return;
   const fields=['source','id','type','title','link','price','usable','total','beds','suites','baths','spaces','floors','neighborhood','city','state','lat','lng','approx','advertiser'];
-  const cells=fields.join(';')+'\r\n'+picked.map(p=>fields.map(k=>'"'+String(p[k]??'').replace(/"/g,'""')+'"').join(';')).join('\r\n');
+  const formulaSensitive=new Set(['source','id','type','title','link','neighborhood','city','state','advertiser']);
+  const csvValue=(key,value)=>{
+    const raw=String(value??'');
+    // Protege a abertura do CSV em planilhas contra fórmulas injetadas em
+    // títulos, nomes de anunciantes e outros textos vindos dos portais.
+    const safeRaw=formulaSensitive.has(key)&&/^[\s]*[=+@-]/.test(raw)?"'"+raw:raw;
+    return '"'+safeRaw.replace(/"/g,'""')+'"';
+  };
+  const cells=fields.join(';')+'\r\n'+picked.map(p=>fields.map(k=>csvValue(k,p[k])).join(';')).join('\r\n');
   const object=URL.createObjectURL(new Blob(['\ufeff'+cells],{type:'text/csv;charset=utf-8'}));
   const a=document.createElement('a');a.href=object;a.download='comparaveis-imovel-busca.csv';a.click();setTimeout(()=>URL.revokeObjectURL(object),1200);
 };
